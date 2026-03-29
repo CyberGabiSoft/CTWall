@@ -1,0 +1,14 @@
+<section class="data-view">
+  <div class="data-shell-header ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="ctw-shell-copy">
+      <h2 class="ctw-shell-title">Browse</h2>
+      <p class="ctw-shell-subtitle">Browse products, scopes, and tests with revision-level detail.</p>
+    </div>
+  </div>
+  <app-data-header></app-data-header>
+  @if (isTestDetail()) {
+    <app-data-detail-tables></app-data-detail-tables>
+  } @else {
+    <app-data-list-tables></app-data-list-tables>
+  }
+</section>

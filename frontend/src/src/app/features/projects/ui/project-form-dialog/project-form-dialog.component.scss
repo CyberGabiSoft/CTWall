@@ -1,0 +1,19 @@
+.field {
+  width: 100%;
+}
+
+.project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Keep dialog top padding moderate and add headroom above the first field itself. */
+.project-form .field:first-of-type {
+  margin-top: 8px;
+}
+
+mat-dialog-content {
+  min-width: min(560px, 92vw);
+  padding-top: 14px;
+}

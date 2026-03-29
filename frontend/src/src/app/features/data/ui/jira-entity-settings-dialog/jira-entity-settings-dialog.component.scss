@@ -1,0 +1,249 @@
+.jira-dialog-content {
+  min-width: min(980px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.jira-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.required-fields-card,
+.priority-section {
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 10px;
+  background: var(--ctw-surface-muted);
+  padding: 12px;
+}
+
+.required-fields-card h4,
+.priority-section h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.jira-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.jira-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.priority-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field {
+  width: 100%;
+}
+
+.field--wide {
+  grid-column: span 3;
+}
+
+.field--labels textarea[matInput],
+.field--labels textarea.mat-mdc-input-element {
+  padding: 10px 12px;
+  line-height: 1.4;
+}
+
+.metadata-hint {
+  margin: 0;
+  color: var(--ctw-muted);
+}
+
+.summary-template-help {
+  margin-top: -6px;
+}
+
+.transitions-source-info {
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 10px;
+  background: var(--ctw-surface-muted);
+  padding: 10px 12px;
+}
+
+.transitions-source-info__line {
+  margin: 0;
+}
+
+.transitions-source-info__line + .transitions-source-info__line {
+  margin-top: 6px;
+}
+
+.summary-template-help__title {
+  margin: 0 0 6px;
+  color: var(--ctw-muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.summary-template-help__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.summary-template-help__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ctw-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.summary-template-help__item code {
+  font-family: var(--ctw-font-mono);
+  color: var(--ctw-text);
+  background: color-mix(in oklab, var(--ctw-surface-muted) 72%, var(--ctw-primary) 28%);
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.metadata-error {
+  margin: 0;
+  color: var(--ctw-danger-text);
+}
+
+.effective-card,
+.observability-card {
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 10px;
+  background: var(--ctw-surface-muted);
+  padding: 12px;
+  min-width: 0;
+}
+
+.effective-card h3,
+.observability-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.observability-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.observability-card__header h3 {
+  margin: 0;
+}
+
+.effective-card p {
+  margin: 6px 0 0;
+}
+
+.observability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 620px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.observability-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 8px;
+}
+
+.observability-pagination {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.observability-pagination__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.mini-table th,
+.mini-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ctw-border-subtle);
+}
+
+.mini-table th {
+  color: var(--ctw-muted);
+  font-weight: 600;
+}
+
+.mono {
+  font-family: var(--ctw-font-mono);
+}
+
+.muted {
+  color: var(--ctw-muted);
+}
+
+.jira-issue-link {
+  color: var(--ctw-primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.jira-issue-link:hover,
+.jira-issue-link:focus-visible {
+  color: var(--ctw-primary-strong, var(--ctw-primary));
+}
+
+.retry-now-button {
+  min-width: 96px;
+}
+
+@media (max-width: 1080px) {
+  .jira-dialog-content {
+    min-width: min(760px, 92vw);
+  }
+
+  .jira-form-grid,
+  .priority-grid,
+  .priority-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .observability-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-template-help__list {
+    grid-template-columns: 1fr;
+  }
+
+  .field--wide {
+    grid-column: auto;
+  }
+}

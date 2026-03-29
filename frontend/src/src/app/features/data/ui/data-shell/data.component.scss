@@ -1,0 +1,9 @@
+.data-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.data-shell-header {
+  /* header typography and layout standardized globally in `src/styles.scss` (`.ctw-shell-*`) */
+}

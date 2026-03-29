@@ -1,0 +1,42 @@
+:host {
+  display: block;
+  height: 100%;
+}
+
+.forbidden {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.card {
+  max-width: 480px;
+  width: 100%;
+  margin-inline: auto;
+  background: var(--ctw-surface);
+  border: 1px solid var(--ctw-border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--ctw-shadow-md);
+  text-align: center;
+}
+
+.actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.actions a {
+  color: var(--ctw-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.actions a:hover {
+  text-decoration: underline;
+}

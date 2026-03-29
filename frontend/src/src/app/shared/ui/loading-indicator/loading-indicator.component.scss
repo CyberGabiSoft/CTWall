@@ -1,0 +1,15 @@
+.loading-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ctw-muted);
+}
+
+.loading-indicator.compact {
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.loading-indicator mat-progress-spinner {
+  flex: 0 0 auto;
+}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ctwall-backend.fullname" . }}-config
+  labels:
+    {{- include "ctwall-backend.labels" . | nindent 4 }}
+data:
+{{- if .Values.configRaw }}
+  config.yaml: |
+{{ .Values.configRaw | nindent 4 }}
+{{- else }}
+  config.yaml: |
+{{ tpl (toYaml .Values.config) . | indent 4 }}
+{{- end }}

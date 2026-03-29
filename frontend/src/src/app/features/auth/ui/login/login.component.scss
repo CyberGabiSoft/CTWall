@@ -1,0 +1,133 @@
+.login-page {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--ctw-login-bg);
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.login-stack {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 18px;
+}
+
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--ctw-header-text);
+  user-select: none;
+}
+
+.login-brand-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.login-brand-name {
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  font-size: 1.65rem;
+}
+
+.login-card {
+  padding: 8px;
+}
+
+.login-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.field {
+  width: 100%;
+}
+
+.password-field {
+  width: 100%;
+}
+
+.password-visibility-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  line-height: 32px;
+}
+
+:host ::ng-deep .password-field .mat-mdc-form-field-icon-suffix {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin: 0;
+}
+
+:host ::ng-deep .password-field .password-visibility-toggle .mat-mdc-button-touch-target {
+  width: 32px;
+  height: 32px;
+}
+
+:host ::ng-deep .password-visibility-toggle lucide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  line-height: 0;
+  color: var(--ctw-muted);
+}
+
+:host ::ng-deep .password-field.password-field-active .mdc-notched-outline__leading,
+:host ::ng-deep .password-field.password-field-active .mdc-notched-outline__notch,
+:host ::ng-deep .password-field.password-field-active .mdc-notched-outline__trailing {
+  border-color: color-mix(in srgb, var(--ctw-primary) 74%, var(--ctw-border-subtle));
+}
+
+:host ::ng-deep .password-field.password-field-active .mat-mdc-text-field-wrapper {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ctw-primary) 22%, transparent);
+}
+
+.login-card mat-card-content {
+  padding-top: 14px;
+}
+
+mat-card-header {
+  padding-bottom: 8px;
+}
+
+mat-card-subtitle {
+  margin-top: 4px;
+  color: var(--ctw-muted);
+}
+
+.form-error {
+  color: var(--ctw-danger-text);
+  background: var(--ctw-danger-bg);
+  border: 1px solid var(--ctw-danger-border);
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+button[type='submit'] {
+  width: 100%;
+}
+
+.helper {
+  margin: 8px 0 12px;
+  text-align: center;
+  color: var(--ctw-muted);
+  font-size: 0.85rem;
+}

@@ -1,0 +1,49 @@
+.members-field {
+  width: 100%;
+}
+
+mat-dialog-content {
+  padding-top: 14px;
+}
+
+.selected-members {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.selected-members h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.selected-member-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--ctw-font-mono, monospace);
+  font-size: 0.82rem;
+  color: var(--ctw-muted);
+  overflow-wrap: anywhere;
+}
+
+.member-role-field {
+  width: 170px;
+}
+
+.dialog-state {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dialog-state.error {
+  color: #d32f2f;
+}

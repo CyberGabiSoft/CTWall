@@ -1,0 +1,182 @@
+## CTWall backend configuration.
+## This is the canonical full configuration template used by runtime/bootstrap.
+##
+## Runtime non-secret configuration is stored in this file.
+## Secrets are managed separately in CTWALL_SECRETS_PATH (default: ./secrets.yaml).
+## On first run backend can bootstrap missing secrets into CTWALL_SECRETS_PATH.
+##
+## Optional legacy one-time migration env:
+## - JWT_SECRET_KEY
+## - APP_ENCRYPTION_PASSPHRASE
+## - APP_ENCRYPTION_SALT
+## - ALERTMANAGER_USERNAME
+## - ALERTMANAGER_PASSWORD
+##
+## Optional env:
+## - AUTH_PEPPER (optional)     # Additional secret pepper for password/token hashing
+## Optional runtime overrides:
+## - CTWALL_CONFIG_PATH (path to config file)
+## - CTWALL_SECRETS_PATH (path to runtime secrets file)
+## - CTWALL_CONFIG_TEMPLATE_PATH (template used when CTWALL_CONFIG_PATH does not exist)
+## - PORT (overrides server.port)
+## - STORAGE_PATH (overrides storage.path)
+## - LOG_LEVEL (overrides logging.level)
+## - JWT_ISSUER (overrides auth.jwt_issuer)
+## Optional alertmanager env overrides (config file is primary source):
+## - ALERTMANAGER_ENABLED
+## - ALERTMANAGER_URL
+## - ALERTMANAGER_REQUEST_TIMEOUT
+## - ALERTMANAGER_CONFIG_FILE_PATH
+## - ALERTING_PUBLIC_BASE_URL
+## - ALERTMANAGER_CONTROL_POLL_INTERVAL
+## - ALERTMANAGER_DISPATCH_POLL_INTERVAL
+## - ALERTMANAGER_HEARTBEAT_INTERVAL
+## - ALERTMANAGER_DISPATCH_WORKERS
+## - ALERTMANAGER_CLAIM_BATCH_SIZE
+## - ALERTMANAGER_RETRY_MAX_ATTEMPTS
+## - ALERTMANAGER_RETRY_MAX_WINDOW
+## - ALERTMANAGER_ROUTE_GROUP_BY
+## - ALERTMANAGER_ROUTE_GROUP_WAIT
+## - ALERTMANAGER_ROUTE_GROUP_INTERVAL
+## - ALERTMANAGER_ROUTE_REPEAT_INTERVAL
+## - DB_MAX_OPEN_CONNS (overrides database.max_open_conns)
+## - DB_MAX_IDLE_CONNS (overrides database.max_idle_conns)
+## - DB_CONN_MAX_LIFETIME (overrides database.conn_max_lifetime)
+## - DB_CONN_MAX_IDLE_TIME (overrides database.conn_max_idle_time)
+
+server:
+  ## HTTP listen port.
+  port: "8080"
+  ## Request/response timeouts (Go duration format).
+  read_timeout: "10s"
+  write_timeout: "10s"
+  idle_timeout: "60s"
+
+storage:
+  ## Filesystem path for SBOM storage.
+  path: "data/blob_storage"
+
+logging:
+  ## Log level: debug|info|warn|error
+  level: "info"
+
+database:
+  ## PostgreSQL DSN.
+  ## Example (compose): postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable
+  url: "postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable"
+  ## DB ping timeout (Go duration format).
+  ping_timeout: "5s"
+  ## DB pool max open connections.
+  max_open_conns: 20
+  ## DB pool max idle connections (clamped to <= max_open_conns).
+  max_idle_conns: 10
+  ## Maximum lifetime of a DB connection (Go duration format).
+  conn_max_lifetime: "30m"
+  ## Maximum idle time of a DB connection (Go duration format).
+  conn_max_idle_time: "10m"
+  ## Apply SQL migrations automatically during backend startup.
+  auto_apply_on_start: true
+  ## Directory with SQL migration files (*.up.sql).
+  ## Relative paths resolve against the config file directory.
+  migrations_path: "src/migrations"
+
+auth:
+  ## JWT issuer claim (iss).
+  jwt_issuer: "ctwall-backend"
+  ## Access token TTL (Go duration format).
+  access_token_ttl: "30m"
+  ## Refresh token TTL (Go duration format).
+  refresh_token_ttl: "72h"
+  ## Access token cookie name.
+  ## __Host- prefix requires: Secure + Path=/ + no Domain.
+  cookie_name: "__Host-CTWALL_SESSION"
+  ## Refresh token cookie name.
+  ## __Secure- prefix requires: Secure + HTTPS transport.
+  ## __Host- is not used here because refresh cookie is scoped to /api/v1/auth/refresh.
+  refresh_cookie_name: "__Secure-CTWALL_REFRESH"
+  ## Enforce HTTPS-only cookies.
+  cookie_secure: true
+  ## Dev-only toggle: must be true if cookie_secure is false.
+  allow_insecure_cookies: false
+
+alerting:
+  alertmanager:
+    ## Internal Alertmanager integration is required.
+    enabled: true
+    ## Alertmanager API base URL (same pod/host default for local and in-cluster sidecar).
+    url: "http://127.0.0.1:9093"
+    ## Alertmanager API request timeout.
+    request_timeout: "10s"
+    ## Path where backend renders internal Alertmanager config for reload.
+    ## Relative paths resolve against directory containing config file.
+    config_file_path: "alertmanager.yml"
+    ## Public URL used in outgoing alert links.
+    public_base_url: ""
+    ## Config/control loop poll interval.
+    control_poll_interval: "10s"
+    ## Dispatch loop poll interval.
+    dispatch_poll_interval: "3s"
+    ## Heartbeat cadence for open alerts.
+    heartbeat_interval: "5m"
+    ## Parallel dispatch workers.
+    dispatch_workers: 2
+    ## Claimed dispatch jobs per poll.
+    claim_batch_size: 20
+    ## Retry attempts before dead-letter.
+    retry_max_attempts: 50
+    ## Maximum retry window.
+    retry_max_window: "72h"
+    ## Route grouping labels for rendered Alertmanager config.
+    route_group_by: ["project_id", "severity", "category", "alert_type", "dedup_key"]
+    route_group_wait: "30s"
+    route_group_interval: "5m"
+    route_repeat_interval: "30m"
+
+malware:
+  osv:
+    ## Enable scheduled OSV MAL sync.
+    enabled: true
+    ## Base URL for OSV data (bucket or local mirror).
+    base_url: "https://storage.googleapis.com/osv-vulnerabilities"
+    ## Optional override for full dump ZIP.
+    all_zip_url: "https://storage.googleapis.com/osv-vulnerabilities/all.zip"
+    ## Optional override for modified_id.csv.
+    modified_csv_url: "https://storage.googleapis.com/osv-vulnerabilities/modified_id.csv"
+    ## Local path to store OSV MAL JSON files + state.
+    ## Relative paths resolve under storage.path.
+    data_path: "osv"
+    ## Full sync interval (Go duration format).
+    full_sync_interval: "168h"
+    ## Incremental sync interval (Go duration format).
+    latest_sync_interval: "1h"
+    ## HTTP connect/header timeout for OSV fetch calls (Go duration format).
+    ## Large full dump body streaming is not hard-capped by this value.
+    timeout: "2m"
+    ## Startup bootstrap controls for OSV scheduler.
+    bootstrap_on_start:
+      ## If true (default), seed local OSV state from DB and skip initial full sync when possible.
+      ## If false, backend always performs initial full sync when local OSV state file is missing.
+      seed_state_from_store_on_start: true
+
+workers:
+  ## Ingest pipeline workers (auto or integer).
+  ## auto/empty => min(max(2, 2*vCPU), 8)
+  ingest_workers: "2"
+  ## Malware input processing workers (auto or integer).
+  ## auto/empty => min(max(2, 2*vCPU), 8)
+  malware_input_workers: "2"
+  ## Component analysis queue workers (auto or integer).
+  ## auto/empty => min(max(2, 2*vCPU), 8)
+  malware_component_analysis_workers: "2"
+  ## Revision malware summary workers (auto or integer).
+  ## auto/empty => min(max(2, 2*vCPU), 8)
+  malware_test_revision_summary_workers: "2"
+  ## SBOM reimport revision-diff workers (auto or integer).
+  ## auto/empty => min(max(2, 2*vCPU), 8)
+  malware_test_revision_diff_workers: "2"
+  ## How many component analysis jobs a single worker claims per poll cycle.
+  ## Lower values reduce DB row locking bursts (recommended for large backlogs).
+  malware_component_analysis_claim_batch_size: 5
+  ## How many stale components can be enqueued per scheduler tick.
+  ## This is a safety valve to prevent unbounded enqueue runs.
+  malware_component_analysis_scheduler_enqueue_limit: 1000

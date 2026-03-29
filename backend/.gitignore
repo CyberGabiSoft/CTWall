@@ -1,0 +1,7 @@
+# Go build/test outputs (should not be committed)
+/server
+*.out
+*.log
+coverage.out
+test.log
+

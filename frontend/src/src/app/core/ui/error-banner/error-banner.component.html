@@ -1,0 +1,16 @@
+@if (error(); as err) {
+  <section class="error-banner" role="status" aria-live="polite">
+    <div class="message">
+      <span class="title">Something went wrong.</span>
+      <span class="detail">{{ err.message }}</span>
+      @if (err.errorId) {
+        <span class="error-id mono">Error ID: {{ err.errorId }}</span>
+      }
+    </div>
+    <div class="actions">
+      <button type="button" class="dismiss" (click)="dismiss()" aria-label="Dismiss error">
+        Dismiss
+      </button>
+    </div>
+  </section>
+}

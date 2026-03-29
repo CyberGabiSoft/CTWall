@@ -1,0 +1,528 @@
+<section class="data-graph-view" [class.data-graph-view--fullscreen]="isGraphInFullscreen()">
+  <div class="graph-header ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="header-copy ctw-shell-copy">
+      <h2 class="ctw-shell-title">Graph</h2>
+      <p class="ctw-shell-subtitle">
+        Render dependency chain for selected Product, Scope, and Test. Malware nodes are highlighted
+        and can be inspected in a full technical panel.
+      </p>
+      <div class="header-meta ctw-shell-meta mono">Project: {{ selectedProjectName() ?? 'N/A' }} · Scope: project</div>
+    </div>
+
+  </div>
+
+  <div class="graph-controls data-card ctw-panel ctw-panel--padded">
+    <div class="header-controls">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-control-field ctw-form-field--compact">
+        <mat-label>Product</mat-label>
+        <mat-select
+          [value]="store.selectedProductId()"
+          [disabled]="store.products().length === 0 || store.controlsStatus() === 'loading'"
+          (selectionChange)="onProductChange($event.value)"
+        >
+          <mat-select-trigger>
+            <span class="header-select-trigger" [attr.title]="selectedProductLabel()">
+              {{ selectedProductLabel() || 'Select product' }}
+            </span>
+          </mat-select-trigger>
+          @for (product of store.products(); track product.id) {
+            <mat-option [value]="product.id">{{ product.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-control-field ctw-form-field--compact">
+        <mat-label>Scope</mat-label>
+        <mat-select
+          [value]="store.selectedScopeId()"
+          [disabled]="store.scopes().length === 0 || store.controlsStatus() === 'loading'"
+          (selectionChange)="onScopeChange($event.value)"
+        >
+          @for (scope of store.scopes(); track scope.id) {
+            <mat-option [value]="scope.id">{{ scope.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-control-field ctw-form-field--compact">
+        <mat-label>Test</mat-label>
+        <mat-select
+          [value]="store.selectedTestId()"
+          [disabled]="store.tests().length === 0 || store.controlsStatus() === 'loading'"
+          (selectionChange)="onTestChange($event.value)"
+        >
+          @for (test of store.tests(); track test.id) {
+            <mat-option [value]="test.id">{{ test.name }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-control-field ctw-form-field--compact">
+        <mat-label>SBOM program</mat-label>
+        <mat-select [value]="store.selectedProducer()" (selectionChange)="onProducerChange($event.value)">
+          @for (option of producerOptions; track option.label) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-control-field ctw-form-field--compact">
+        <mat-label>Revision</mat-label>
+        <mat-select [value]="store.selectedRevisionId()" (selectionChange)="onRevisionChange($event.value)">
+          <mat-option value="">active (default)</mat-option>
+          @for (revision of store.revisions(); track revision.id) {
+            <mat-option [value]="revision.id">{{ revisionOptionLabel(revision) }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-control-field ctw-form-field--compact">
+        <mat-label>Max nodes</mat-label>
+        <input
+          #maxNodesField
+          matInput
+          type="number"
+          min="1"
+          max="5000"
+          [value]="store.maxNodes()"
+          (blur)="onMaxNodesInput(maxNodesField.value)"
+          (keydown.enter)="onMaxNodesInput(maxNodesField.value)"
+        />
+      </mat-form-field>
+
+      <button
+        mat-flat-button
+        type="button"
+        class="render-btn"
+        [disabled]="!store.selectedTestId() || store.graphStatus() === 'loading'"
+        (click)="renderGraph()"
+      >
+        Render graph
+      </button>
+    </div>
+  </div>
+
+  @if (store.controlsStatus() === 'error') {
+    <div class="ctw-card-state error" role="status" aria-live="polite">
+      {{ store.controlsError() ?? 'Failed to load graph selectors.' }}
+    </div>
+  }
+
+  <mat-card
+    #graphCardRoot
+    class="graph-card data-card ctw-panel"
+    [class.graph-card--pseudo-fullscreen]="isGraphPseudoFullscreen()"
+    [style.position]="isGraphPseudoFullscreen() ? 'fixed' : null"
+    [style.inset]="isGraphPseudoFullscreen() ? '0' : null"
+    [style.z-index]="isGraphPseudoFullscreen() ? '1200' : null"
+    [style.width]="isGraphPseudoFullscreen() ? '100vw' : null"
+    [style.height]="isGraphPseudoFullscreen() ? '100vh' : null"
+    [style.max-width]="isGraphPseudoFullscreen() ? 'none' : null"
+    [style.max-height]="isGraphPseudoFullscreen() ? 'none' : null"
+    [style.margin]="isGraphPseudoFullscreen() ? '0' : null"
+    [style.border-radius]="isGraphPseudoFullscreen() ? '0' : null"
+    [style.padding]="isGraphPseudoFullscreen() ? '12px' : null"
+  >
+    <mat-card-content>
+      <div class="card-header">
+        <div>
+          <h3>Dependency chain</h3>
+          <p>Interactive graph from active project test revision. Click any node to inspect details.</p>
+        </div>
+        <div class="graph-summary mono">
+          @if (store.graphStatus() === 'loaded' && store.hasGraph()) {
+            nodes: {{ formatNumber(store.graphMetadata().nodeCount) }} · edges:
+            {{ formatNumber(store.graphMetadata().edgeCount) }} ·
+            {{ store.graphMetadata().sbomProducer || 'producer: auto' }}
+          } @else {
+            waiting for render
+          }
+        </div>
+      </div>
+
+      <div class="graph-tools">
+        <div class="legend">
+          <div class="legend-item">
+            <span class="swatch malware"></span>
+            <span>malware</span>
+          </div>
+          <div class="legend-item">
+            <span class="swatch clean"></span>
+            <span>clean / unknown</span>
+          </div>
+        </div>
+
+        <div class="graph-search">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="graph-search-field">
+            <mat-label>Search graph</mat-label>
+            <input
+              #graphSearchField
+              matInput
+              type="text"
+              autocomplete="off"
+              [value]="graphSearch()"
+              (input)="onGraphSearchInput(graphSearchField.value)"
+              placeholder="PURL, package, type, namespace, verdict"
+            />
+          </mat-form-field>
+          @if (hasGraphSearch()) {
+            <button mat-stroked-button type="button" (click)="clearGraphSearch()">
+              Clear
+            </button>
+            <span class="graph-search-meta mono">
+              matches: {{ formatNumber(graphSearchMatchCount()) }}
+            </span>
+          }
+        </div>
+
+        <div class="view-actions">
+          <button mat-stroked-button type="button" (click)="zoomOut()" [disabled]="!store.hasGraph()">
+            Zoom -
+          </button>
+          <button mat-stroked-button type="button" (click)="zoomIn()" [disabled]="!store.hasGraph()">
+            Zoom +
+          </button>
+          <button mat-stroked-button type="button" (click)="fitToView()" [disabled]="!store.hasGraph()">
+            Fit
+          </button>
+          <button mat-stroked-button type="button" (click)="resetView()" [disabled]="!store.hasGraph()">
+            Reset
+          </button>
+          <button mat-stroked-button type="button" [disabled]="!store.hasGraph()" (click)="toggleGraphFullscreen()">
+            {{ isGraphInFullscreen() ? 'Exit full screen' : 'Full screen' }}
+          </button>
+          <span class="zoom-label mono">{{ zoom() * 100 | number: '1.0-0' }}%</span>
+        </div>
+      </div>
+
+      @if (store.graphStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Rendering dependency graph...'" [size]="30"></app-loading-indicator>
+        </div>
+      } @else if (store.graphStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">
+          {{ store.graphError() ?? 'Failed to render dependency graph.' }}
+        </div>
+      } @else if (!store.hasGraph()) {
+        <div class="ctw-card-state">
+          Select Product, Scope, Test and click <span class="mono">Render graph</span>.
+        </div>
+      } @else {
+        @if (store.graphMetadata().truncated) {
+          <div class="truncated-banner" role="status">
+            Graph truncated:
+            {{ store.graphMetadata().truncationReason || 'size limits reached' }}.
+          </div>
+        }
+
+        <div
+          #graphViewport
+          class="graph-viewport"
+          (wheel)="onGraphWheel($event)"
+          (mousedown)="onViewportMouseDown($event)"
+          aria-label="Dependency graph viewport"
+        >
+          <div class="graph-canvas" [style.width.px]="scaledWidth()" [style.height.px]="scaledHeight()">
+            <svg
+              class="graph-svg"
+              [attr.width]="scaledWidth()"
+              [attr.height]="scaledHeight()"
+              [attr.viewBox]="graphViewBox()"
+              role="img"
+              aria-label="Dependency chain graph"
+            >
+              <defs>
+                <marker
+                  id="graph-edge-arrow"
+                  viewBox="0 0 10 10"
+                  refX="8"
+                  refY="5"
+                  markerWidth="6"
+                  markerHeight="6"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" class="graph-edge-arrow"></path>
+                </marker>
+              </defs>
+
+              @for (edge of graphLayout().edges; track edge.id) {
+                <path
+                  [class]="edgeClass(edge)"
+                  [attr.d]="edge.path"
+                  marker-end="url(#graph-edge-arrow)"
+                ></path>
+              }
+
+              @for (node of graphLayout().nodes; track node.id) {
+                <g [attr.transform]="'translate(' + node.x + ',' + node.y + ')'">
+                  <foreignObject [attr.width]="node.width" [attr.height]="node.height">
+                    <button
+                      xmlns="http://www.w3.org/1999/xhtml"
+                      type="button"
+                      [class]="nodeClass(node)"
+                      (click)="onNodeClick(node.id)"
+                      [attr.aria-label]="'Open node details for ' + node.purl"
+                    >
+                      <span class="node-line node-line--primary mono" [attr.title]="nodeLinePrimary(node)">
+                        {{ nodeLinePrimary(node) }}
+                      </span>
+                      <span class="node-line node-line--secondary mono" [attr.title]="nodeLineSecondary(node)">
+                        {{ nodeLineSecondary(node) }}
+                      </span>
+                      <span class="node-meta">
+                        <span>{{ node.pkgType || 'pkg' }}</span>
+                        @if (node.isMalware) {
+                          <span class="node-badge node-badge--malware">malware {{ node.malwareCount }}</span>
+                        } @else {
+                          <span class="node-badge node-badge--clean">clean</span>
+                        }
+                      </span>
+                    </button>
+                  </foreignObject>
+                </g>
+              }
+            </svg>
+          </div>
+        </div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="details-card data-card ctw-panel">
+    <mat-card-content>
+      <div class="card-header">
+        <div>
+          <h3>Selected component details</h3>
+          <p>Complete component context from current project scope, including malware, queue, and occurrences.</p>
+        </div>
+        <div class="detail-actions">
+          <button
+            mat-stroked-button
+            type="button"
+            [disabled]="!selectedNode()"
+            (click)="openExplorer()"
+          >
+            Open in Explorer
+          </button>
+          <button
+            mat-stroked-button
+            type="button"
+            [disabled]="!selectedNode()"
+            (click)="openDataTestDetails()"
+          >
+            Open test details
+          </button>
+        </div>
+      </div>
+
+      @if (!selectedNode()) {
+        <div class="ctw-card-state">Select a graph node to load component details.</div>
+      } @else if (store.detailsStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading component details...'" [size]="26"></app-loading-indicator>
+        </div>
+      } @else if (store.detailsStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">
+          {{ store.detailsError() ?? 'Failed to load selected component details.' }}
+        </div>
+      } @else if (selectedDetails(); as details) {
+        <section class="details-grid">
+          <div class="info-block ctw-panel ctw-panel--compact">
+            <h4>Identity</h4>
+            <div class="identity-grid">
+              <div class="kv">
+                <span>Package</span>
+                <strong>{{ details.identity.pkgName || 'N/A' }}</strong>
+              </div>
+              <div class="kv">
+                <span>Version</span>
+                <strong class="mono">{{ details.identity.version || 'N/A' }}</strong>
+              </div>
+              <div class="kv">
+                <span>Type</span>
+                <strong class="mono">{{ details.identity.pkgType || 'N/A' }}</strong>
+              </div>
+              <div class="kv">
+                <span>Namespace</span>
+                <strong class="mono">{{ details.identity.pkgNamespace || 'N/A' }}</strong>
+              </div>
+              <div class="kv">
+                <span>Component ID</span>
+                <strong class="mono">{{ details.identity.id || 'N/A' }}</strong>
+              </div>
+              <div class="kv">
+                <span>Revision</span>
+                <strong class="mono">{{ details.identity.revisionId || 'N/A' }}</strong>
+              </div>
+              <div class="kv kv--wide">
+                <span>PURL</span>
+                <div class="value-inline">
+                  <strong class="mono">{{ details.identity.purl || 'N/A' }}</strong>
+                  <app-copy-button
+                    [value]="details.identity.purl"
+                    ariaLabel="Copy component PURL"
+                  ></app-copy-button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-block ctw-panel ctw-panel--compact">
+            <h4>Malware summary</h4>
+            <div class="summary-grid">
+              <div class="kv">
+                <span>Verdict</span>
+                <strong [class]="verdictClass(details.malwareSummary.verdict)">
+                  {{ details.malwareSummary.verdict || 'UNKNOWN' }}
+                </strong>
+              </div>
+              <div class="kv">
+                <span>Findings</span>
+                <strong>{{ formatNumber(details.malwareSummary.findingsCount) }}</strong>
+              </div>
+              <div class="kv">
+                <span>Scanned</span>
+                <strong>{{ formatDateTime(details.malwareSummary.scannedAt) }}</strong>
+              </div>
+              <div class="kv">
+                <span>Valid until</span>
+                <strong>{{ formatDateTime(details.malwareSummary.validUntil) }}</strong>
+              </div>
+              <div class="kv kv--wide">
+                <span>Summary</span>
+                <strong>{{ details.malwareSummary.summary || 'No summary available.' }}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="json-grid">
+          <div class="json-block ctw-panel ctw-panel--compact">
+            <h4>Licenses</h4>
+            <pre class="mono">{{ identityJson(details.identity.licenses) || 'N/A' }}</pre>
+          </div>
+          <div class="json-block ctw-panel ctw-panel--compact">
+            <h4>Properties</h4>
+            <pre class="mono">{{ identityJson(details.identity.properties) || 'N/A' }}</pre>
+          </div>
+        </section>
+
+        <section class="tables-grid">
+          <div class="table-block ctw-panel ctw-panel--compact">
+            <div class="table-header">
+              <h4>Malware findings</h4>
+              <p>Mapped malware relations and triage status.</p>
+            </div>
+            <ng-template #findingRow let-row let-columns="columns">
+              @for (column of columns; track column.key) {
+                <td [class]="column.className ?? ''">{{ findingRowValue(row, column.key) }}</td>
+              }
+            </ng-template>
+            <app-data-table
+              [columns]="findingColumns"
+              [rows]="details.malwareFindings"
+              [columnOrder]="findingColumnOrder()"
+              [availableColumns]="[]"
+              [tablePanelOpen]="false"
+              [showTablePanel]="false"
+              [showFilterToggle]="false"
+              [enableSorting]="false"
+              [exportEnabled]="false"
+              [paginationEnabled]="false"
+              [status]="'loaded'"
+              [showActionsColumn]="false"
+              [rowContentTemplate]="findingRow"
+              [emptyMessage]="'No malware findings for selected component.'"
+            ></app-data-table>
+          </div>
+
+          <div class="table-block ctw-panel ctw-panel--compact">
+            <div class="table-header">
+              <h4>Raw findings</h4>
+              <p>Source-level scan artifacts and publishing metadata.</p>
+            </div>
+            <ng-template #rawFindingRow let-row let-columns="columns">
+              @for (column of columns; track column.key) {
+                <td [class]="column.className ?? ''">{{ rawFindingRowValue(row, column.key) }}</td>
+              }
+            </ng-template>
+            <app-data-table
+              [columns]="rawFindingColumns"
+              [rows]="details.rawFindings"
+              [columnOrder]="rawFindingColumnOrder()"
+              [availableColumns]="[]"
+              [tablePanelOpen]="false"
+              [showTablePanel]="false"
+              [showFilterToggle]="false"
+              [enableSorting]="false"
+              [exportEnabled]="false"
+              [paginationEnabled]="false"
+              [status]="'loaded'"
+              [showActionsColumn]="false"
+              [rowContentTemplate]="rawFindingRow"
+              [emptyMessage]="'No raw findings for selected component.'"
+            ></app-data-table>
+          </div>
+
+          <div class="table-block ctw-panel ctw-panel--compact">
+            <div class="table-header">
+              <h4>Queue history</h4>
+              <p>Analysis queue timeline for this PURL.</p>
+            </div>
+            <ng-template #queueRow let-row let-columns="columns">
+              @for (column of columns; track column.key) {
+                <td [class]="column.className ?? ''">{{ queueRowValue(row, column.key) }}</td>
+              }
+            </ng-template>
+            <app-data-table
+              [columns]="queueColumns"
+              [rows]="details.queueHistory"
+              [columnOrder]="queueColumnOrder()"
+              [availableColumns]="[]"
+              [tablePanelOpen]="false"
+              [showTablePanel]="false"
+              [showFilterToggle]="false"
+              [enableSorting]="false"
+              [exportEnabled]="false"
+              [paginationEnabled]="false"
+              [status]="'loaded'"
+              [showActionsColumn]="false"
+              [rowContentTemplate]="queueRow"
+              [emptyMessage]="'No queue history for selected component.'"
+            ></app-data-table>
+          </div>
+
+          <div class="table-block ctw-panel ctw-panel--compact">
+            <div class="table-header">
+              <h4>Occurrences in project</h4>
+              <p>Where this component appears across project revisions.</p>
+            </div>
+            <ng-template #occurrenceRow let-row let-columns="columns">
+              @for (column of columns; track column.key) {
+                <td [class]="column.className ?? ''">{{ occurrenceRowValue(row, column.key) }}</td>
+              }
+            </ng-template>
+            <app-data-table
+              [columns]="occurrenceColumns"
+              [rows]="details.occurrences"
+              [columnOrder]="occurrenceColumnOrder()"
+              [availableColumns]="[]"
+              [tablePanelOpen]="false"
+              [showTablePanel]="false"
+              [showFilterToggle]="false"
+              [enableSorting]="false"
+              [exportEnabled]="false"
+              [paginationEnabled]="false"
+              [status]="'loaded'"
+              [showActionsColumn]="false"
+              [rowContentTemplate]="occurrenceRow"
+              [emptyMessage]="'No project occurrences for selected component.'"
+            ></app-data-table>
+          </div>
+        </section>
+      } @else {
+        <div class="ctw-card-state">Select a graph node to load component details.</div>
+      }
+    </mat-card-content>
+  </mat-card>
+</section>

@@ -1,0 +1,171 @@
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.settings-shell {
+  /* shell typography and background are standardized globally via `.ctw-shell-*` */
+}
+
+.card-header p {
+  margin: 8px 0 0;
+  color: var(--ctw-muted);
+}
+
+.row-actions button,
+.card-header button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-view :is(button[mat-stroked-button], button[mat-flat-button]) {
+  text-transform: none;
+}
+
+.settings-view lucide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.add-user-btn .btn-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  line-height: 1;
+}
+
+.add-user-btn .btn-inline > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.add-user-btn .btn-inline lucide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+/* Button icon+text alignment is standardized globally in `src/styles.scss`. */
+
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.card-header h4 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.meta-item {
+  border: 1px solid var(--ctw-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: color-mix(in srgb, var(--ctw-surface) 88%, transparent);
+  min-width: 0;
+}
+
+.meta-item strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.meta-label {
+  color: var(--ctw-muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.sources-panel {
+  margin-bottom: 12px;
+}
+
+.sources-panel h5 {
+  margin: 0 0 8px;
+  font-size: 1.02rem;
+}
+
+.inline-hint {
+  color: var(--ctw-muted);
+  font-size: 0.9rem;
+}
+
+.sources-panel :is(app-data-table, .table-wrapper) {
+  margin-top: 8px;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-weight: 700;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+}
+
+.status--ok {
+  background: var(--ctw-success-soft);
+  color: var(--ctw-success-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-success-text) 30%, transparent);
+}
+
+.status--err {
+  background: var(--ctw-danger-soft);
+  color: var(--ctw-danger-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-danger-text) 30%, transparent);
+}
+
+.status--na {
+  background: color-mix(in srgb, var(--ctw-muted) 22%, transparent);
+  color: var(--ctw-muted);
+  border: 1px solid color-mix(in srgb, var(--ctw-muted) 30%, transparent);
+}
+
+@media (max-width: 1100px) {
+  .meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .settings-shell,
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+}

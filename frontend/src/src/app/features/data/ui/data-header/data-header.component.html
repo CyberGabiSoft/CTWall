@@ -1,0 +1,40 @@
+<mat-card class="data-header ctw-panel">
+  <div class="section-tabs">
+    <mat-button-toggle-group
+      class="section-toggle"
+      [value]="data.section()"
+      aria-label="Data sections"
+      (change)="data.setSection($event.value)"
+    >
+      <mat-button-toggle value="products">Products ({{ data.productTotal() }})</mat-button-toggle>
+      <mat-button-toggle value="scopes">Scopes ({{ data.scopeTotal() }})</mat-button-toggle>
+      <mat-button-toggle value="tests">Tests ({{ data.testTotal() }})</mat-button-toggle>
+    </mat-button-toggle-group>
+  </div>
+
+  @if (data.selectedProductId() || data.selectedScopeId() || (data.isTestDetail() && data.selectedTestId())) {
+    <nav class="breadcrumb" aria-label="Data navigation">
+      @if (data.selectedScopeId() || (data.isTestDetail() && data.selectedTestId())) {
+        <button type="button" (click)="data.navigateToProduct()">
+          {{ data.getProductName(data.selectedProductId()) }}
+        </button>
+      } @else {
+        <span class="current">{{ data.getProductName(data.selectedProductId()) }}</span>
+      }
+      @if (data.selectedScopeId()) {
+        <span class="separator">→</span>
+        @if (data.isTestDetail() && data.selectedTestId()) {
+          <button type="button" (click)="data.navigateToScope()">
+            {{ data.getScopeName(data.selectedScopeId()) }}
+          </button>
+        } @else {
+          <span class="current">{{ data.getScopeName(data.selectedScopeId()) }}</span>
+        }
+      }
+      @if (data.isTestDetail() && data.selectedTestId()) {
+        <span class="separator">→</span>
+        <span class="current">{{ data.getTestName(data.selectedTestId()) }}</span>
+      }
+    </nav>
+  }
+</mat-card>

@@ -1,0 +1,215 @@
+<section class="events-view">
+  <mat-card class="events-card data-card ctw-panel">
+    <mat-card-content>
+      <div class="events-header">
+        <div>
+          <h3>Events</h3>
+          <p>Important system events aggregated from backend audit logs.</p>
+        </div>
+        <div class="header-actions">
+          <button mat-stroked-button type="button" class="options-btn" (click)="toggleOptions()">
+            <lucide-icon [img]="Settings2" aria-hidden="true"></lucide-icon>
+            <span>Options</span>
+          </button>
+          <button mat-stroked-button type="button" (click)="refresh(true)" [disabled]="status() === 'loading'">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      @if (optionsOpen()) {
+        <div class="options-panel ctw-panel ctw-panel--padded">
+          <div class="options-grid">
+            <div class="options-block">
+              <strong>Status</strong>
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="category-field">
+                <mat-select
+                  placeholder="Select status"
+                  [value]="statusFilter()"
+                  (selectionChange)="statusFilter.set($event.value)"
+                >
+                  <mat-option value="open">open</mat-option>
+                  <mat-option value="acknowledged">acknowledged</mat-option>
+                </mat-select>
+              </mat-form-field>
+              <div class="hint">
+                <span class="mono">acknowledged</span> shows closed cases (events acknowledged and not seen again).
+              </div>
+            </div>
+
+            <div class="options-block">
+              <strong>Severity</strong>
+              <div class="checks">
+                <mat-checkbox [checked]="includeError()" (change)="includeError.set($event.checked)">
+                  ERROR
+                </mat-checkbox>
+                <mat-checkbox [checked]="includeWarn()" (change)="includeWarn.set($event.checked)">
+                  WARN
+                </mat-checkbox>
+                <mat-checkbox [checked]="includeInfo()" (change)="includeInfo.set($event.checked)">
+                  INFO
+                </mat-checkbox>
+              </div>
+              <div class="hint">
+                Default view is <span class="mono">ERROR</span>. To avoid flood, enable <span class="mono">WARN/INFO</span> only with category filtering.
+              </div>
+            </div>
+
+            <div class="options-block">
+              <strong>Categories per severity</strong>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="category-field">
+                <mat-select
+                  multiple
+                  placeholder="ERROR categories (optional)"
+                  [disabled]="!includeError()"
+                  [value]="includeErrorCategories()"
+                  (selectionChange)="includeErrorCategories.set($event.value)"
+                >
+                  @for (cat of categories; track cat) {
+                    <mat-option [value]="cat">{{ cat }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="category-field">
+                <mat-select
+                  multiple
+                  placeholder="WARN categories (required when WARN enabled)"
+                  [disabled]="!includeWarn()"
+                  [value]="includeWarnCategories()"
+                  (selectionChange)="includeWarnCategories.set($event.value)"
+                >
+                  @for (cat of categories; track cat) {
+                    <mat-option [value]="cat">{{ cat }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="category-field">
+                <mat-select
+                  multiple
+                  placeholder="INFO categories (required when INFO enabled)"
+                  [disabled]="!includeInfo()"
+                  [value]="includeInfoCategories()"
+                  (selectionChange)="includeInfoCategories.set($event.value)"
+                >
+                  @for (cat of categories; track cat) {
+                    <mat-option [value]="cat">{{ cat }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <div class="hint">
+                Categories are applied server-side for each selected severity. Empty selection means "all categories" for that severity.
+              </div>
+            </div>
+          </div>
+
+          <div class="options-actions">
+            <button mat-flat-button color="primary" type="button" (click)="applyOptions()" [disabled]="!canApply()">
+              Apply
+            </button>
+          </div>
+        </div>
+      }
+
+      <ng-template #rowContent let-row let-columns="columns">
+        @for (column of columns; track column.key) {
+          <td>
+            @if (column.key === 'severity') {
+              <span [class]="severityClass(row.severity)">{{ row.severity }}</span>
+            } @else if (column.key === 'status') {
+              <span [class]="statusClass(row.status)">{{ row.status }}</span>
+            } @else {
+              {{ rowValue(row, column.key) }}
+            }
+          </td>
+        }
+      </ng-template>
+
+      <ng-template #actions let-row>
+        <button mat-stroked-button type="button" class="open-btn" (click)="openDetails(row)">
+          Open
+        </button>
+      </ng-template>
+
+      <ng-template #toolbar>
+        <button
+          type="button"
+          class="filter-panel-toggle"
+          [class.active]="filterPanelOpen()"
+          (click)="toggleExtendedFilters()"
+          aria-label="Toggle extended filtering"
+        >
+          <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+          <span>Extended filtering</span>
+        </button>
+      </ng-template>
+
+      <ng-template #panel>
+        @if (filterPanelOpen()) {
+          <app-advanced-filter-panel
+            [fields]="advancedFields()"
+            [idPrefix]="'events'"
+            (modeChange)="setFilterMode($event.key, $event.mode)"
+            (valueChange)="setFilterValue($event.key, $event.value)"
+            (selectionChange)="setMultiFilter($event.key, $event.values)"
+            (clearFilters)="clearFilters()"
+          ></app-advanced-filter-panel>
+        }
+      </ng-template>
+
+      @if (status() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading events...'" [size]="28"></app-loading-indicator>
+        </div>
+      } @else if (status() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">
+          {{ errorMessage() ?? 'Failed to load events.' }}
+        </div>
+      } @else {
+        <app-data-table
+          [columns]="columns"
+          [rows]="tableRows()"
+          [exportProvider]="exportAllEvents"
+          [exportFilenameBase]="'events'"
+          [columnOrder]="columnOrder()"
+          [availableColumns]="availableColumns()"
+          [tablePanelOpen]="tablePanelOpen()"
+          [lockedColumns]="lockedColumns"
+          [filterRowVisible]="filterRowVisible()"
+          [filterVisible]="filterVisible()"
+          [columnFilters]="columnFilters()"
+          [sortColumn]="sortColumn()"
+          [sortDir]="sortDir()"
+          [toolbarTemplate]="toolbar"
+          [panelTemplate]="panel"
+          [rowContentTemplate]="rowContent"
+          [actionsTemplate]="actions"
+          [showActionsColumn]="true"
+          [status]="'loaded'"
+          [emptyMessage]="'No events found.'"
+          [enableSorting]="true"
+          [showFilterToggle]="true"
+          [showTablePanel]="true"
+          [paginationEnabled]="true"
+          [pageSizeOptions]="pageSizeOptions"
+          [pageSize]="pageSize()"
+          [pageIndex]="pageIndex()"
+          [totalPages]="totalPages()"
+          (toggleTablePanel)="toggleTablePanel()"
+          (dropColumn)="dropColumn($event)"
+          (removeColumn)="removeColumn($event)"
+          (addColumn)="addColumn($event)"
+          (toggleFilter)="toggleFilter($event.key, $event.event)"
+          (setColumnFilter)="setColumnFilter($event.key, $event.event)"
+          (toggleSort)="toggleSort($event)"
+          (setPageSize)="setPageSize($event)"
+          (prevPage)="prevPage()"
+          (nextPage)="nextPage()"
+        ></app-data-table>
+      }
+    </mat-card-content>
+  </mat-card>
+</section>

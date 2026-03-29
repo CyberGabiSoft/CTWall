@@ -1,0 +1,54 @@
+# Non-secret Helm values for ctwall-backend.
+# Copy this file outside the chart directory and edit it before deployment.
+#
+# Example:
+# cp backend/helm/ctwall-backend/examples/backend-values.example.yaml ./deploy/backend-values.yaml
+
+image:
+  repository: docker.io/cybergabi/ctwall-backend
+  tag: 1.0.0
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Backend data volume for /app/data
+persistence:
+  enabled: true
+  storageClass: ""
+  size: 10Gi
+
+# Backend config volume for /app/config
+# Stores runtime config.yaml, secrets.yaml, and alertmanager.yml.
+configPersistence:
+  enabled: true
+  storageClass: ""
+  size: 1Gi
+
+# In-cluster PostgreSQL for quick start.
+# Set enabled=false when using external PostgreSQL.
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "18"
+  auth:
+    username: appuser
+    database: appdb
+  persistence:
+    enabled: false
+
+# Use chart-managed Secret for PostgreSQL password unless you provide existingSecret.
+secretEnv:
+  create: true
+  existingSecret: ""
+
+# Internal Alertmanager sidecar (mandatory).
+alertmanager:
+  image:
+    repository: prom/alertmanager
+    tag: v0.28.1

@@ -1,0 +1,595 @@
+<h2 mat-dialog-title>Jira settings: {{ data.level }} / {{ data.targetName }}</h2>
+
+<div mat-dialog-content class="jira-dialog-content">
+  @if (loadState() === 'loading') {
+    <div class="ctw-card-state">
+      <app-loading-indicator
+        [message]="'Loading Jira settings...'"
+        [size]="28"
+      ></app-loading-indicator>
+    </div>
+  } @else {
+    @if (errorMessage()) {
+      <div class="ctw-card-state error">{{ errorMessage() }}</div>
+    }
+
+    <form class="jira-form" [formGroup]="form" novalidate>
+      <div class="jira-form-header">
+        <mat-slide-toggle color="primary" formControlName="isEnabled"
+          >Enable Jira dispatch for this {{ data.level.toLowerCase() }}</mat-slide-toggle
+        >
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="refreshMetadata()"
+          [disabled]="metadataState() === 'loading' || saving()"
+        >
+          Refresh metadata
+        </button>
+      </div>
+
+      <div class="jira-form-grid">
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Jira project key</mat-label>
+          <mat-select
+            formControlName="jiraProjectKey"
+            (selectionChange)="onProjectKeyChange($event.value)"
+          >
+            <mat-option value="">Select project</mat-option>
+            @if (!hasProjectOptions()) {
+              <mat-option value="" disabled>No projects available from Jira metadata</mat-option>
+            }
+            @for (project of projects(); track project.key) {
+              <mat-option [value]="project.key">{{ project.key }} - {{ project.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Issue type</mat-label>
+          <mat-select
+            formControlName="issueType"
+            [disabled]="!hasSelectedProject()"
+            (selectionChange)="onIssueTypeChange($event.value)"
+          >
+            <mat-option value="">Select issue type</mat-option>
+            @if (!hasSelectedProject()) {
+              <mat-option value="" disabled>Select Jira project first</mat-option>
+            } @else if (issueTypes().length === 0) {
+              <mat-option value="" disabled>No issue types available for selected project</mat-option>
+            }
+            @for (type of issueTypes(); track type.id + '-' + type.name) {
+              <mat-option [value]="type.name">{{ type.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Custom issue type (optional)</mat-label>
+          <input
+            matInput
+            type="text"
+            formControlName="issueTypeCustom"
+            [disabled]="!hasSelectedProject()"
+            (input)="onIssueTypeCustomChange($any($event.target).value)"
+            placeholder="e.g. Security Finding"
+          />
+          <mat-hint>Use list selection or custom value.</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Retry attempts</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="deliveryRetryAttempts"
+            [min]="deliveryRetryAttemptsMin"
+            [max]="deliveryRetryAttemptsMax"
+            step="1"
+          />
+          <mat-hint
+            >0 disables internal retries (range {{ deliveryRetryAttemptsMin }}-{{
+              deliveryRetryAttemptsMax
+            }})</mat-hint
+          >
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Retry backoff (seconds)</mat-label>
+          <input
+            matInput
+            type="number"
+            formControlName="deliveryRetryBackoffSeconds"
+            [min]="deliveryRetryBackoffSecondsMin"
+            [max]="deliveryRetryBackoffSecondsMax"
+            step="1"
+          />
+          <mat-hint
+            >Used between retry attempts (range {{ deliveryRetryBackoffSecondsMin }}-{{
+              deliveryRetryBackoffSecondsMax
+            }})</mat-hint
+          >
+        </mat-form-field>
+
+        <div class="field transitions-source-info">
+          <p class="muted transitions-source-info__line">
+            Transitions are loaded from sample issue in selected project:
+            <strong>{{ transitionSourceIssue() || 'not available' }}</strong>
+          </p>
+          <p class="muted transitions-source-info__line">
+            Available transition states: {{ availableTransitionNamesLabel() }}
+          </p>
+        </div>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Open transition</mat-label>
+          <mat-select formControlName="openTransitionName">
+            <mat-option value="">Select transition</mat-option>
+            @for (transition of transitions(); track transition.id + '-' + transition.name) {
+              <mat-option [value]="transition.name">{{ transition.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Resolve transition</mat-label>
+          <mat-select formControlName="resolveTransitionName">
+            <mat-option value="">Select transition</mat-option>
+            @for (transition of transitions(); track transition.id + '-' + transition.name) {
+              <mat-option [value]="transition.name">{{ transition.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Epic handling</mat-label>
+          <mat-select formControlName="epicMode" (selectionChange)="onEpicModeChange($event.value)">
+            <mat-option value="none">Do not link issues to Epic</mat-option>
+            <mat-option value="existing">Link issues to existing Epic</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        @if (isEpicModeExisting()) {
+          <mat-form-field appearance="outline" class="field">
+            <mat-label>Search Epic</mat-label>
+            <input
+              matInput
+              type="text"
+              [value]="epicIssueSearch()"
+              (input)="onEpicIssueSearchChange($any($event.target).value)"
+              placeholder="Type key or summary, e.g. KAN-119"
+            />
+            <mat-hint>{{ filteredEpicIssues().length }} of {{ epicIssues().length }} shown</mat-hint>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="field">
+            <mat-label>Select existing Epic</mat-label>
+            <mat-select [value]="form.controls.epicIssueKey.value" (selectionChange)="onEpicIssueSelect($event.value)">
+              <mat-option value="">Select Epic</mat-option>
+              @if (!hasEpicIssueOptions()) {
+                <mat-option value="" disabled>No Epic issues loaded from Jira metadata</mat-option>
+              }
+              @if (hasEpicIssueOptions() && filteredEpicIssues().length === 0) {
+                <mat-option value="" disabled>No results for current search</mat-option>
+              }
+              @for (issue of filteredEpicIssues(); track issue.id + '-' + issue.key) {
+                <mat-option [value]="issue.key">
+                  {{ issue.key }} · {{ issue.summary || issue.status || 'No details' }}
+                </mat-option>
+              }
+            </mat-select>
+            <mat-hint>Use refresh metadata if Jira Epic list changed.</mat-hint>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="field">
+            <mat-label>Epic issue key (manual)</mat-label>
+            <input
+              matInput
+              type="text"
+              formControlName="epicIssueKey"
+              placeholder="e.g. SEC-123"
+            />
+            <mat-hint>Optional manual override if Epic is not visible in metadata list.</mat-hint>
+          </mat-form-field>
+        }
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Epic field key (optional)</mat-label>
+          <input
+            matInput
+            type="text"
+            formControlName="epicFieldKey"
+            placeholder="auto or customfield_10014"
+          />
+          <mat-hint>Empty uses Jira parent relation; set custom field key for Epic link.</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field field--wide">
+          <mat-label>Ticket summary template</mat-label>
+          <input
+            matInput
+            type="text"
+            formControlName="ticketSummaryTemplate"
+            [placeholder]="'CTWall {{severity}} | {{product}}/{{scope}}/{{test}}'"
+          />
+        </mat-form-field>
+
+        <div
+          class="field field--wide summary-template-help"
+          aria-label="Supported ticket summary variables"
+        >
+          <p class="summary-template-help__title">Available variables for summary template:</p>
+          <div class="summary-template-help__list">
+            @for (variable of summaryTemplateVariables; track variable.token) {
+              <div class="summary-template-help__item">
+                <code>{{ variable.token }}</code>
+                <span>{{ variable.description }}</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <mat-form-field appearance="outline" class="field field--wide field--labels">
+          <mat-label>Labels</mat-label>
+          <textarea
+            matInput
+            rows="2"
+            formControlName="labelsText"
+            placeholder="comma or newline separated labels"
+          ></textarea>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field field--wide">
+          <mat-label>Components</mat-label>
+          <mat-select formControlName="components" multiple>
+            @for (component of componentsOptions(); track component.id + '-' + component.name) {
+              <mat-option [value]="component.name">{{ component.name }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      @if (hasSelectedProject()) {
+        <section class="required-fields-card">
+          <h4>Required Jira fields</h4>
+          @if (!hasSelectedOrCustomIssueType()) {
+            <p class="muted">Select issue type to load required fields for this project.</p>
+          } @else if (requiredIssueFields().length === 0) {
+            <p class="muted">No required fields returned for selected project and issue type.</p>
+          } @else {
+            <p class="muted">
+              These fields are required by Jira for selected project and issue type.
+            </p>
+            <div class="jira-form-grid">
+              @for (field of requiredIssueFields(); track trackIssueField($index, field)) {
+                @if (field.inputType === 'single_select') {
+                  <mat-form-field appearance="outline" class="field">
+                    <mat-label>{{ field.name || field.key }}</mat-label>
+                    <mat-select
+                      [value]="issueFieldSingleSelectValue(field.key)"
+                      (selectionChange)="setIssueFieldSingleSelectValue(field.key, $event.value)"
+                    >
+                      <mat-option value="">Select value</mat-option>
+                      @for (
+                        option of field.allowedValues ?? [];
+                        track issueFieldOptionToken(option)
+                      ) {
+                        <mat-option [value]="issueFieldOptionToken(option)">{{
+                          issueFieldOptionLabel(option)
+                        }}</mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                } @else if (field.inputType === 'multi_select') {
+                  <mat-form-field appearance="outline" class="field">
+                    <mat-label>{{ field.name || field.key }}</mat-label>
+                    <mat-select
+                      multiple
+                      [value]="issueFieldMultiSelectValue(field.key)"
+                      (selectionChange)="setIssueFieldMultiSelectValue(field.key, $event.value)"
+                    >
+                      @for (
+                        option of field.allowedValues ?? [];
+                        track issueFieldOptionToken(option)
+                      ) {
+                        <mat-option [value]="issueFieldOptionToken(option)">{{
+                          issueFieldOptionLabel(option)
+                        }}</mat-option>
+                      }
+                    </mat-select>
+                  </mat-form-field>
+                } @else if (field.inputType === 'boolean') {
+                  <mat-form-field appearance="outline" class="field">
+                    <mat-label>{{ field.name || field.key }}</mat-label>
+                    <mat-select
+                      [value]="issueFieldBooleanValue(field.key)"
+                      (selectionChange)="setIssueFieldBooleanValue(field.key, $event.value)"
+                    >
+                      <mat-option [value]="''">Select value</mat-option>
+                      <mat-option [value]="true">True</mat-option>
+                      <mat-option [value]="false">False</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                } @else {
+                  <mat-form-field appearance="outline" class="field">
+                    <mat-label>{{ field.name || field.key }}</mat-label>
+                    <input
+                      matInput
+                      [type]="field.inputType === 'number' ? 'number' : 'text'"
+                      [value]="issueFieldTextValue(field.key)"
+                      (input)="setIssueFieldTextValue(field.key, $any($event.target).value)"
+                    />
+                  </mat-form-field>
+                }
+              }
+            </div>
+          }
+        </section>
+      }
+
+      <section class="priority-section">
+        <h4>Severity to priority mapping (optional)</h4>
+        <div class="priority-grid">
+          <mat-form-field appearance="outline" class="field">
+            <mat-label>Priority for INFO</mat-label>
+            <mat-select formControlName="priorityInfo">
+              <mat-option value="">(none)</mat-option>
+              @for (priority of priorities(); track priority.id + '-' + priority.name) {
+                <mat-option [value]="priority.name">{{ priority.name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="field">
+            <mat-label>Priority for WARNING</mat-label>
+            <mat-select formControlName="priorityWarning">
+              <mat-option value="">(none)</mat-option>
+              @for (priority of priorities(); track priority.id + '-' + priority.name) {
+                <mat-option [value]="priority.name">{{ priority.name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="field">
+            <mat-label>Priority for ERROR</mat-label>
+            <mat-select formControlName="priorityError">
+              <mat-option value="">(none)</mat-option>
+              @for (priority of priorities(); track priority.id + '-' + priority.name) {
+                <mat-option [value]="priority.name">{{ priority.name }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </section>
+
+      <p class="metadata-hint">{{ metadataHint() }}</p>
+      @if (metadataError()) {
+        <p class="metadata-error">{{ metadataError() }}</p>
+      }
+    </form>
+
+    @if (canShowEffective()) {
+      <section class="effective-card">
+        <h3>Effective settings preview (test precedence)</h3>
+        @if (effectiveSettings()) {
+          <p>
+            Resolved from: <strong>{{ effectiveSettings()?.resolvedFromLevel }}</strong>
+          </p>
+          <p class="mono">Target ID: {{ effectiveSettings()?.resolvedTargetId }}</p>
+        } @else if (effectiveSettingsMissing()) {
+          <p class="muted">No effective Jira settings found for this test.</p>
+        } @else {
+          <p class="muted">Effective settings not available.</p>
+        }
+      </section>
+    }
+
+    <section class="observability-grid">
+      <div class="observability-card">
+        <div class="observability-card__header">
+          <h3>Linked Jira issues (all)</h3>
+          <button
+            mat-stroked-button
+            type="button"
+            (click)="syncAllLinkedIssues()"
+            [disabled]="syncAllLinkedIssuesInProgress() || issuesLoading() || saving()"
+          >
+            @if (syncAllLinkedIssuesInProgress()) {
+              Syncing...
+            } @else {
+              Sync all linked issues
+            }
+          </button>
+        </div>
+
+        <div class="observability-controls">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="field">
+            <mat-label>Status</mat-label>
+            <mat-select
+              [value]="issuesStatusFilter()"
+              (selectionChange)="setIssuesStatusFilter($event.value)"
+            >
+              <mat-option value="all">All</mat-option>
+              <mat-option value="open">Open</mat-option>
+              <mat-option value="closed">Closed</mat-option>
+            </mat-select>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="field">
+            <mat-label>Component filter</mat-label>
+            <input
+              matInput
+              type="text"
+              [value]="issuesComponentFilter()"
+              (input)="setIssuesComponentFilter($any($event.target).value)"
+              placeholder="component purl contains..."
+            />
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="field">
+            <mat-label>Jira key filter</mat-label>
+            <input
+              matInput
+              type="text"
+              [value]="issuesJiraKeyFilter()"
+              (input)="setIssuesJiraKeyFilter($any($event.target).value)"
+              placeholder="e.g. KAN-123"
+            />
+          </mat-form-field>
+        </div>
+
+        @if (issueMappings().length === 0) {
+          <p class="muted">No linked Jira issues for this target.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Jira issue</th>
+                <th>Status</th>
+                <th>Component</th>
+                <th>Alert group</th>
+                <th>Last synced</th>
+                <th>Sync</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (issue of issueMappings(); track issue.id) {
+                <tr>
+                  <td>
+                    @if (jiraIssueBrowseUrl(issue); as issueUrl) {
+                      <a
+                        class="jira-issue-link mono"
+                        [href]="issueUrl"
+                        rel="noopener noreferrer"
+                        target="_blank"
+                      >
+                        {{ issue.jiraIssueKey || issue.jiraIssueId || '-' }}
+                      </a>
+                    } @else {
+                      <span class="mono">{{ issue.jiraIssueKey || issue.jiraIssueId || '-' }}</span>
+                    }
+                  </td>
+                  <td>{{ issue.status || '-' }}</td>
+                  <td class="mono" [title]="issue.componentPurl || ''">
+                    {{ issue.componentPurl || '-' }}
+                  </td>
+                  <td class="mono" [title]="issue.alertGroupId || ''">{{ issue.alertGroupId || '-' }}</td>
+                  <td>{{ issue.lastSyncedAt || issue.updatedAt || '-' }}</td>
+                  <td>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      class="retry-now-button"
+                      (click)="retryIssueMapping(issue)"
+                      [disabled]="
+                        !canRetryIssueMapping(issue) ||
+                        isRetryingAlertGroupID(issue.alertGroupId) ||
+                        saving()
+                      "
+                    >
+                      @if (isRetryingAlertGroupID(issue.alertGroupId)) {
+                        Retrying...
+                      } @else {
+                        Retry now
+                      }
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+
+          <div class="observability-pagination">
+            <span class="muted"
+              >Page {{ issuesPage() }} of {{ issuesTotalPages() || 1 }} · Total
+              {{ issuesTotal() }}</span
+            >
+            <div class="observability-pagination__actions">
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="prevIssuesPage()"
+                [disabled]="issuesPage() <= 1 || issuesLoading()"
+              >
+                Previous
+              </button>
+              <button
+                mat-stroked-button
+                type="button"
+                (click)="nextIssuesPage()"
+                [disabled]="
+                  issuesLoading() || (issuesTotalPages() > 0 && issuesPage() >= issuesTotalPages())
+                "
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="observability-card">
+        <h3>Delivery attempts (last 25)</h3>
+        @if (deliveries().length === 0) {
+          <p class="muted">No delivery attempts for this target.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Outcome</th>
+                <th>Action</th>
+                <th>Alert group</th>
+                <th>Created</th>
+                <th>Retry</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (attempt of deliveries(); track attempt.id) {
+                <tr>
+                  <td>{{ attempt.outcome }}</td>
+                  <td>{{ attempt.action }}</td>
+                  <td class="mono" [title]="attempt.alertGroupId || ''">
+                    {{ attempt.alertGroupId || '-' }}
+                  </td>
+                  <td>{{ attempt.createdAt || '-' }}</td>
+                  <td>
+                    <button
+                      mat-stroked-button
+                      type="button"
+                      class="retry-now-button"
+                      (click)="retryDeliveryAttempt(attempt)"
+                      [disabled]="
+                        !canRetryDelivery(attempt) || isRetryingDelivery(attempt) || saving()
+                      "
+                    >
+                      @if (isRetryingDelivery(attempt)) {
+                        Retrying...
+                      } @else {
+                        Retry now
+                      }
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+    </section>
+  }
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="close(false)" [disabled]="saving()">
+    Close
+  </button>
+  <button
+    mat-flat-button
+    color="primary"
+    type="button"
+    (click)="save()"
+    [disabled]="saving() || loadState() === 'loading'"
+  >
+    Save
+  </button>
+</div>

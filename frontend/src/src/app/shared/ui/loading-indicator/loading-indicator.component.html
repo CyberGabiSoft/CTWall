@@ -1,0 +1,9 @@
+<div class="loading-indicator" role="status" aria-live="polite" [class.compact]="compact()">
+  @if (spinnerPosition() === 'after') {
+    <span>{{ message() }}</span>
+    <mat-progress-spinner [diameter]="size()" mode="indeterminate"></mat-progress-spinner>
+  } @else {
+    <mat-progress-spinner [diameter]="size()" mode="indeterminate"></mat-progress-spinner>
+    <span>{{ message() }}</span>
+  }
+</div>

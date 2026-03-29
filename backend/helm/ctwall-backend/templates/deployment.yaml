@@ -1,0 +1,232 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ctwall-backend.fullname" . }}
+  labels:
+    {{- include "ctwall-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ctwall-backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/alertmanager-bootstrap: {{ include (print $.Template.BasePath "/alertmanager-bootstrap-configmap.yaml") . | sha256sum }}
+        {{- if and .Values.secretEnv.create (not .Values.secretEnv.existingSecret) }}
+        checksum/secret-env: {{ include (print $.Template.BasePath "/secret-env.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "ctwall-backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- $runtimeSecretName := include "ctwall-backend.secretName" . }}
+      {{- $runtimeSecretEnabled := or .Values.secretEnv.create (ne (trim .Values.secretEnv.existingSecret) "") }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "ctwall-backend.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: alertmanager-bootstrap
+          image: "{{ .Values.alertmanager.initImage.repository }}:{{ .Values.alertmanager.initImage.tag }}"
+          imagePullPolicy: {{ .Values.alertmanager.initImage.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              cp /bootstrap/alertmanager.yml /config/alertmanager.yml
+              chmod 0660 /config/alertmanager.yml
+          volumeMounts:
+            - name: alertmanager-bootstrap
+              mountPath: /bootstrap/alertmanager.yml
+              subPath: alertmanager.yml
+              readOnly: true
+            - name: config-data
+              mountPath: /config
+        - name: runtime-initializer
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if or .Values.env .Values.extraEnv }}
+          env:
+            - name: CTWALL_INIT_ONLY
+              value: "true"
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ tpl ($value | toString) $ | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- else }}
+          env:
+            - name: CTWALL_INIT_ONLY
+              value: "true"
+          {{- end }}
+          {{- if or $runtimeSecretEnabled .Values.extraEnvFrom }}
+          envFrom:
+            {{- if $runtimeSecretEnabled }}
+            - secretRef:
+                name: {{ $runtimeSecretName }}
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.initializerResources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /app/config.template.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: config-data
+              mountPath: {{ .Values.configPersistence.mountPath }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+      containers:
+        - name: {{ include "ctwall-backend.name" . }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          {{- if or .Values.env .Values.extraEnv }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ tpl ($value | toString) $ | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- if or $runtimeSecretEnabled .Values.extraEnvFrom }}
+          envFrom:
+            {{- if $runtimeSecretEnabled }}
+            - secretRef:
+                name: {{ $runtimeSecretName }}
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.startup.enabled }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.probes.startup.tcpSocketPort }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          {{- end }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.probes.liveness.tcpSocketPort }}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.probes.readiness.tcpSocketPort }}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /app/config.template.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: config-data
+              mountPath: {{ .Values.configPersistence.mountPath }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+        - name: alertmanager
+          image: "{{ .Values.alertmanager.image.repository }}:{{ .Values.alertmanager.image.tag }}"
+          imagePullPolicy: {{ .Values.alertmanager.image.pullPolicy }}
+          args:
+            - --config.file=/app/config/alertmanager.yml
+            - --storage.path=/alertmanager/data
+            - --web.listen-address=0.0.0.0:{{ .Values.alertmanager.listenPort }}
+          ports:
+            - name: alertmanager
+              containerPort: {{ .Values.alertmanager.listenPort }}
+              protocol: TCP
+          {{- with .Values.alertmanager.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config-data
+              mountPath: /app/config
+              readOnly: true
+            - name: alertmanager-data
+              mountPath: /alertmanager
+      volumes:
+        - name: config-template
+          configMap:
+            name: {{ include "ctwall-backend.fullname" . }}-config
+        - name: alertmanager-bootstrap
+          configMap:
+            name: {{ include "ctwall-backend.fullname" . }}-alertmanager-bootstrap
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-data" (include "ctwall-backend.fullname" .)) .Values.persistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: config-data
+          {{- if .Values.configPersistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-config" (include "ctwall-backend.fullname" .)) .Values.configPersistence.existingClaim }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: alertmanager-data
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

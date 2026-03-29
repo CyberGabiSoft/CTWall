@@ -1,0 +1,71 @@
+server:
+  port: "8080"
+  read_timeout: "10s"
+  write_timeout: "10s"
+  idle_timeout: "60s"
+
+storage:
+  path: "data/blob_storage"
+
+logging:
+  level: "info"
+
+database:
+  url: "postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable"
+  ping_timeout: "5s"
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime: "30m"
+  conn_max_idle_time: "10m"
+  auto_apply_on_start: true
+  migrations_path: "src/migrations"
+
+auth:
+  jwt_issuer: "ctwall-backend"
+  access_token_ttl: "30m"
+  refresh_token_ttl: "72h"
+  cookie_name: "__Host-CTWALL_SESSION"
+  refresh_cookie_name: "__Secure-CTWALL_REFRESH"
+  cookie_secure: true
+  allow_insecure_cookies: false
+
+alerting:
+  alertmanager:
+    enabled: true
+    url: "http://ctwall-alertmanager:9093"
+    request_timeout: "10s"
+    config_file_path: "alertmanager.yml"
+    public_base_url: "https://127.0.0.1:8443"
+    control_poll_interval: "10s"
+    dispatch_poll_interval: "3s"
+    heartbeat_interval: "5m"
+    dispatch_workers: 2
+    claim_batch_size: 20
+    retry_max_attempts: 50
+    retry_max_window: "72h"
+    route_group_by: ["project_id", "severity", "category", "alert_type", "dedup_key"]
+    route_group_wait: "30s"
+    route_group_interval: "5m"
+    route_repeat_interval: "30m"
+
+malware:
+  osv:
+    enabled: true
+    base_url: "https://storage.googleapis.com/osv-vulnerabilities"
+    all_zip_url: "https://storage.googleapis.com/osv-vulnerabilities/all.zip"
+    modified_csv_url: "https://storage.googleapis.com/osv-vulnerabilities/modified_id.csv"
+    data_path: "osv"
+    full_sync_interval: "168h"
+    latest_sync_interval: "1h"
+    timeout: "2m"
+    bootstrap_on_start:
+      seed_state_from_store_on_start: true
+
+workers:
+  ingest_workers: "2"
+  malware_input_workers: "2"
+  malware_component_analysis_workers: "2"
+  malware_test_revision_summary_workers: "2"
+  malware_test_revision_diff_workers: "2"
+  malware_component_analysis_claim_batch_size: 5
+  malware_component_analysis_scheduler_enqueue_limit: 1000

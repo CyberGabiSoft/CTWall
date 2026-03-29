@@ -1,0 +1,45 @@
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--ctw-danger-bg);
+  border-bottom: 1px solid var(--ctw-danger-border);
+  color: var(--ctw-danger-text);
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.detail {
+  font-size: 0.95rem;
+}
+
+.error-id {
+  color: var(--ctw-danger-text);
+}
+
+.actions {
+  flex: 0 0 auto;
+}
+
+.dismiss {
+  border: 1px solid var(--ctw-danger-border);
+  background: transparent;
+  color: inherit;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  background: var(--ctw-danger-hover);
+}

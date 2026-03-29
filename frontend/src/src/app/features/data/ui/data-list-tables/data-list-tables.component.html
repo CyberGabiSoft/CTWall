@@ -1,0 +1,873 @@
+<section class="data-table">
+      @if (data.section() === 'products') {
+        <mat-card class="section-card data-card data-card--flush ctw-panel">
+          <mat-card-content>
+            <div class="list-header">
+              <button
+                mat-stroked-button
+                type="button"
+                class="back-btn header-placeholder"
+                aria-hidden="true"
+                disabled
+              >
+                ← Back
+              </button>
+              <h2>All Products</h2>
+            </div>
+            <ng-template #productToolbar>
+              <button
+                type="button"
+                class="filter-panel-toggle"
+                [class.active]="data.productFilterPanelOpen()"
+                (click)="data.toggleProductFilterPanel()"
+                aria-label="Toggle extended filtering"
+              >
+                <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+                <span>Extended filtering</span>
+              </button>
+              <span class="toolbar-spacer"></span>
+              <div class="toolbar-actions">
+                <button
+                  mat-flat-button
+                  color="primary"
+                  type="button"
+                  (click)="data.createProduct()"
+                  [disabled]="!data.canWrite() || data.isMutating()"
+                >
+                  Add product
+                </button>
+              </div>
+            </ng-template>
+
+            <ng-template #productPanel>
+              @if (data.isMutating()) {
+                <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+              }
+              @if (data.productFilterPanelOpen()) {
+                <div class="extended-filter-panel">
+                  <div class="filter-grid">
+                    <div class="filter-field">
+                      <span class="filter-label" id="product-name-filter-label">Name</span>
+                      <mat-button-toggle-group
+                        aria-labelledby="product-name-filter-label"
+                        class="filter-mode-toggle"
+                        [value]="data.productFilterMode().name"
+                        (change)="data.setProductFilterMode('name', $event.value)"
+                      >
+                        <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                        <mat-button-toggle value="select">Select</mat-button-toggle>
+                      </mat-button-toggle-group>
+                      @if (data.productFilterMode().name === 'select') {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <mat-select
+                            aria-labelledby="product-name-filter-label"
+                            multiple
+                            [value]="data.productMultiFilters().name"
+                            (selectionChange)="data.setProductMultiFilter('name', $event.value)"
+                          >
+                            @for (option of data.productFilterOptions().name; track option) {
+                              <mat-option [value]="option">{{ option }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      } @else {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <input
+                            aria-labelledby="product-name-filter-label"
+                            matInput
+                            placeholder="Contains"
+                            [value]="data.productColumnFilters().name"
+                            (input)="data.setProductColumnFilter('name', $event)"
+                          />
+                        </mat-form-field>
+                      }
+                    </div>
+                    <div class="filter-field">
+                      <span class="filter-label" id="product-scopes-filter-label">Scopes</span>
+                      <mat-button-toggle-group
+                        aria-labelledby="product-scopes-filter-label"
+                        class="filter-mode-toggle"
+                        [value]="data.productFilterMode().scopes"
+                        (change)="data.setProductFilterMode('scopes', $event.value)"
+                      >
+                        <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                        <mat-button-toggle value="select">Select</mat-button-toggle>
+                      </mat-button-toggle-group>
+                      @if (data.productFilterMode().scopes === 'select') {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <mat-select
+                            aria-labelledby="product-scopes-filter-label"
+                            multiple
+                            [value]="data.productMultiFilters().scopes"
+                            (selectionChange)="data.setProductMultiFilter('scopes', $event.value)"
+                          >
+                            @for (option of data.productFilterOptions().scopes; track option) {
+                              <mat-option [value]="option">{{ option }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      } @else {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <input
+                            aria-labelledby="product-scopes-filter-label"
+                            matInput
+                            placeholder="Contains"
+                            [value]="data.productColumnFilters().scopes"
+                            (input)="data.setProductColumnFilter('scopes', $event)"
+                          />
+                        </mat-form-field>
+                      }
+                    </div>
+                    <div class="filter-field">
+                      <span class="filter-label" id="product-updated-filter-label">Updated</span>
+                      <mat-button-toggle-group
+                        aria-labelledby="product-updated-filter-label"
+                        class="filter-mode-toggle"
+                        [value]="data.productFilterMode().updated"
+                        (change)="data.setProductFilterMode('updated', $event.value)"
+                      >
+                        <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                        <mat-button-toggle value="select">Select</mat-button-toggle>
+                      </mat-button-toggle-group>
+                      @if (data.productFilterMode().updated === 'select') {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <mat-select
+                            aria-labelledby="product-updated-filter-label"
+                            multiple
+                            [value]="data.productMultiFilters().updated"
+                            (selectionChange)="data.setProductMultiFilter('updated', $event.value)"
+                          >
+                            @for (option of data.productFilterOptions().updated; track option) {
+                              <mat-option [value]="option">{{ option }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      } @else {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <input
+                            aria-labelledby="product-updated-filter-label"
+                            matInput
+                            placeholder="Contains"
+                            [value]="data.productColumnFilters().updated"
+                            (input)="data.setProductColumnFilter('updated', $event)"
+                          />
+                        </mat-form-field>
+                      }
+                    </div>
+                  </div>
+                  <div class="filter-actions">
+                    <button mat-stroked-button type="button" (click)="data.clearProductFilters()">
+                      Clear filters
+                    </button>
+                  </div>
+                </div>
+              }
+            </ng-template>
+                        <ng-template #productRowContent let-product let-columns="columns">
+                          @for (column of columns; track column.key) {
+                            <td [class]="column.className ?? ''">
+                              {{ data.productColumnValue(product, column.key) }}
+                            </td>
+                          }
+                        </ng-template>
+
+                        <ng-template #productExpanded let-product let-columns="columns">
+                          <div class="expanded-content">
+                            <app-data-table-expanded-details
+                              [columns]="2"
+                              [items]="productExpandedItems(product)"
+                              [visibleColumns]="columns"
+                              [visibleRow]="product"
+                              [visibleValue]="exportValueForProducts"
+                            ></app-data-table-expanded-details>
+                          </div>
+                        </ng-template>
+
+                        <ng-template #productActions let-product>
+                          <div class="row-actions">
+                            <button
+                              mat-stroked-button
+                              type="button"
+                              class="open-btn"
+                              (click)="data.onArrowClick($event, product)"
+                            >
+                              <span class="btn-inner">
+                                <span>Open</span>
+                                <lucide-icon [img]="ArrowRight" aria-hidden="true"></lucide-icon>
+                              </span>
+                            </button>
+                            <button
+                              mat-icon-button
+                              type="button"
+                              aria-label="Product actions"
+                              [matMenuTriggerFor]="productMenu"
+                              [matMenuTriggerData]="{ product: product }"
+                              (click)="data.stopEvent($event)"
+                            >
+                              <lucide-icon [img]="MoreVertical" aria-hidden="true"></lucide-icon>
+                            </button>
+                          </div>
+                        </ng-template>
+
+                        <mat-menu #productMenu="matMenu">
+                          <ng-template matMenuContent let-product="product">
+                            <button mat-menu-item type="button" (click)="data.openProductJiraSettings(product)">
+                              Jira settings
+                            </button>
+                            @if (data.isAdmin()) {
+                              <button mat-menu-item type="button" (click)="data.deleteProduct(product)">
+                                Delete
+                              </button>
+                            }
+                          </ng-template>
+                        </mat-menu>
+
+                        <app-data-table
+                          [exportFilenameBase]="'products'"
+                          [exportRows]="data.productRows()"
+                          [exportValue]="exportValueForProducts"
+                          [columns]="data.productColumnDefinitions()"
+                          [columnOrder]="data.productColumnOrder()"
+                          [columnQuery]="data.productColumnQuery()"
+                          [availableColumns]="data.availableProductColumns()"
+                          [tablePanelOpen]="data.productTablePanelOpen()"
+                          [showTablePanel]="true"
+                          [lockedColumns]="['name']"
+                          [toolbarTemplate]="productToolbar"
+                          [panelTemplate]="productPanel"
+                          [showFilterToggle]="true"
+                          [showActionsColumn]="true"
+                          [filterRowVisible]="data.productFilterRowVisible()"
+                          [filterVisible]="data.productFilterVisible()"
+                          [columnFilters]="data.productColumnFilters()"
+                          [enableSorting]="true"
+                          [expandable]="true"
+                          [expandedRowIds]="data.productExpandedIds()"
+                          [rowIdKey]="'id'"
+                          [expandedDetails]="productExpandedDetailsForTable"
+                          [rowContentTemplate]="productRowContent"
+                          [expandedRowTemplate]="productExpanded"
+                          [actionsTemplate]="productActions"
+                          [sortColumn]="data.productSortColumn()"
+                          [sortDir]="data.productSortDir()"
+                          [rows]="data.productPage()"
+                          [status]="data.productsStatus() === 'loading' ? 'loading' : data.productsStatus() === 'error' ? 'error' : 'loaded'"
+                          [loadingMessage]="'Loading products...'"
+                          [errorMessage]="'Failed to load products.'"
+                          [emptyMessage]="'No products found.'"
+                          [pageSizeOptions]="data.pageSizeOptions"
+                          [pageSize]="data.productPageSize()"
+                          [pageIndex]="data.productPageIndex()"
+                          [totalPages]="data.productTotalPages()"
+                          [trackByKey]="'id'"
+                          (toggleTablePanel)="data.toggleProductTablePanel()"
+                          (dropColumn)="onProductDropColumn($event)"
+                          (removeColumn)="onProductRemoveColumn($event)"
+                          (addColumn)="onProductAddColumn($event)"
+                          (setColumnQuery)="data.setProductColumnQuery($event)"
+                          (toggleFilter)="onProductToggleFilter($event)"
+                          (setColumnFilter)="onProductSetColumnFilter($event)"
+                          (toggleSort)="onProductToggleSort($event)"
+                          (rowToggle)="onToggleExpanded($event)"
+                          (setPageSize)="data.setProductPageSize($event)"
+                          (prevPage)="data.prevProductPage()"
+                          (nextPage)="data.nextProductPage()"
+                        ></app-data-table>
+
+          </mat-card-content>
+        </mat-card>
+      }
+
+      @if (data.section() === 'scopes') {
+        <mat-card class="section-card data-card data-card--flush ctw-panel">
+          <mat-card-content>
+            <div class="list-header">
+              <button
+                mat-stroked-button
+                type="button"
+                class="back-btn"
+                (click)="data.backToProducts()"
+                aria-label="Back to products"
+              >
+                ← Back
+              </button>
+              <h2>{{ data.selectedProductId() ? data.getProductName(data.selectedProductId()) : 'All Scopes' }}</h2>
+            </div>
+            <ng-template #scopeToolbar>
+              <button
+                type="button"
+                class="filter-panel-toggle"
+                [class.active]="data.scopeFilterPanelOpen()"
+                (click)="data.toggleScopeFilterPanel()"
+                aria-label="Toggle extended filtering"
+              >
+                <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+                <span>Extended filtering</span>
+              </button>
+              <span class="toolbar-spacer"></span>
+              <div class="toolbar-actions">
+                <button
+                  mat-flat-button
+                  color="primary"
+                  type="button"
+                  (click)="data.createScope()"
+                  [disabled]="!data.canWrite() || !data.selectedProductId() || data.isMutating()"
+                >
+                  Add scope
+                </button>
+              </div>
+            </ng-template>
+
+            <ng-template #scopePanel>
+              @if (data.isMutating()) {
+                <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+              }
+              @if (data.scopeFilterPanelOpen()) {
+                <div class="extended-filter-panel">
+                  <div class="filter-grid">
+                    <div class="filter-field">
+                      <span class="filter-label" id="scope-name-filter-label">Name</span>
+                      <mat-button-toggle-group
+                        aria-labelledby="scope-name-filter-label"
+                        class="filter-mode-toggle"
+                        [value]="data.scopeFilterMode().name"
+                        (change)="data.setScopeFilterMode('name', $event.value)"
+                      >
+                        <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                        <mat-button-toggle value="select">Select</mat-button-toggle>
+                      </mat-button-toggle-group>
+                      @if (data.scopeFilterMode().name === 'select') {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <mat-select
+                            aria-labelledby="scope-name-filter-label"
+                            multiple
+                            [value]="data.scopeMultiFilters().name"
+                            (selectionChange)="data.setScopeMultiFilter('name', $event.value)"
+                          >
+                            @for (option of data.scopeFilterOptions().name; track option) {
+                              <mat-option [value]="option">{{ option }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      } @else {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <input
+                            aria-labelledby="scope-name-filter-label"
+                            matInput
+                            placeholder="Contains"
+                            [value]="data.scopeColumnFilters().name"
+                            (input)="data.setScopeColumnFilter('name', $event)"
+                          />
+                        </mat-form-field>
+                      }
+                    </div>
+                    <div class="filter-field">
+                      <span class="filter-label" id="scope-tests-filter-label">Tests</span>
+                      <mat-button-toggle-group
+                        aria-labelledby="scope-tests-filter-label"
+                        class="filter-mode-toggle"
+                        [value]="data.scopeFilterMode().tests"
+                        (change)="data.setScopeFilterMode('tests', $event.value)"
+                      >
+                        <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                        <mat-button-toggle value="select">Select</mat-button-toggle>
+                      </mat-button-toggle-group>
+                      @if (data.scopeFilterMode().tests === 'select') {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <mat-select
+                            aria-labelledby="scope-tests-filter-label"
+                            multiple
+                            [value]="data.scopeMultiFilters().tests"
+                            (selectionChange)="data.setScopeMultiFilter('tests', $event.value)"
+                          >
+                            @for (option of data.scopeFilterOptions().tests; track option) {
+                              <mat-option [value]="option">{{ option }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      } @else {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <input
+                            aria-labelledby="scope-tests-filter-label"
+                            matInput
+                            placeholder="Contains"
+                            [value]="data.scopeColumnFilters().tests"
+                            (input)="data.setScopeColumnFilter('tests', $event)"
+                          />
+                        </mat-form-field>
+                      }
+                    </div>
+                    <div class="filter-field">
+                      <span class="filter-label" id="scope-updated-filter-label">Updated</span>
+                      <mat-button-toggle-group
+                        aria-labelledby="scope-updated-filter-label"
+                        class="filter-mode-toggle"
+                        [value]="data.scopeFilterMode().updated"
+                        (change)="data.setScopeFilterMode('updated', $event.value)"
+                      >
+                        <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                        <mat-button-toggle value="select">Select</mat-button-toggle>
+                      </mat-button-toggle-group>
+                      @if (data.scopeFilterMode().updated === 'select') {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <mat-select
+                            aria-labelledby="scope-updated-filter-label"
+                            multiple
+                            [value]="data.scopeMultiFilters().updated"
+                            (selectionChange)="data.setScopeMultiFilter('updated', $event.value)"
+                          >
+                            @for (option of data.scopeFilterOptions().updated; track option) {
+                              <mat-option [value]="option">{{ option }}</mat-option>
+                            }
+                          </mat-select>
+                        </mat-form-field>
+                      } @else {
+                        <mat-form-field appearance="outline" class="filter-input">
+                          <input
+                            aria-labelledby="scope-updated-filter-label"
+                            matInput
+                            placeholder="Contains"
+                            [value]="data.scopeColumnFilters().updated"
+                            (input)="data.setScopeColumnFilter('updated', $event)"
+                          />
+                        </mat-form-field>
+                      }
+                    </div>
+                  </div>
+                  <div class="filter-actions">
+                    <button mat-stroked-button type="button" (click)="data.clearScopeFilters()">
+                      Clear filters
+                    </button>
+                  </div>
+                </div>
+              }
+            </ng-template>
+                        <ng-template #scopeRowContent let-scope let-columns="columns">
+                          @for (column of columns; track column.key) {
+                            <td [class]="column.className ?? ''">
+                              {{ data.scopeColumnValue(scope, column.key) }}
+                            </td>
+                          }
+                        </ng-template>
+
+                        <ng-template #scopeExpanded let-scope let-columns="columns">
+                          <div class="expanded-content">
+                            <app-data-table-expanded-details
+                              [columns]="2"
+                              [items]="scopeExpandedItems(scope)"
+                              [visibleColumns]="columns"
+                              [visibleRow]="scope"
+                              [visibleValue]="exportValueForScopes"
+                            ></app-data-table-expanded-details>
+                          </div>
+                        </ng-template>
+
+                        <ng-template #scopeActions let-scope>
+                          <div class="row-actions">
+                            <button
+                              mat-stroked-button
+                              type="button"
+                              class="open-btn"
+                              (click)="data.onArrowClick($event, scope)"
+                            >
+                              <span class="btn-inner">
+                                <span>Open</span>
+                                <lucide-icon [img]="ArrowRight" aria-hidden="true"></lucide-icon>
+                              </span>
+                            </button>
+                            <button
+                              mat-icon-button
+                              type="button"
+                              aria-label="Scope actions"
+                              [matMenuTriggerFor]="scopeMenu"
+                              [matMenuTriggerData]="{ scope: scope }"
+                              (click)="data.stopEvent($event)"
+                            >
+                              <lucide-icon [img]="MoreVertical" aria-hidden="true"></lucide-icon>
+                            </button>
+                          </div>
+                        </ng-template>
+
+                        <mat-menu #scopeMenu="matMenu">
+                          <ng-template matMenuContent let-scope="scope">
+                            <button mat-menu-item type="button" (click)="data.openScopeJiraSettings(scope)">
+                              Jira settings
+                            </button>
+                            @if (data.isAdmin()) {
+                              <button mat-menu-item type="button" (click)="data.deleteScope(scope)">
+                                Delete
+                              </button>
+                            }
+                          </ng-template>
+                        </mat-menu>
+
+                        <app-data-table
+                          [exportFilenameBase]="'scopes'"
+                          [exportRows]="data.scopeRows()"
+                          [exportValue]="exportValueForScopes"
+                          [columns]="data.scopeColumnDefinitions()"
+                          [columnOrder]="data.scopeColumnOrder()"
+                          [columnQuery]="data.scopeColumnQuery()"
+                          [availableColumns]="data.availableScopeColumns()"
+                          [tablePanelOpen]="data.scopeTablePanelOpen()"
+                          [showTablePanel]="true"
+                          [lockedColumns]="['name']"
+                          [toolbarTemplate]="scopeToolbar"
+                          [panelTemplate]="scopePanel"
+                          [showFilterToggle]="true"
+                          [showActionsColumn]="true"
+                          [filterRowVisible]="data.scopeFilterRowVisible()"
+                          [filterVisible]="data.scopeFilterVisible()"
+                          [columnFilters]="data.scopeColumnFilters()"
+                          [enableSorting]="true"
+                          [expandable]="true"
+                          [expandedRowIds]="data.scopeExpandedIds()"
+                          [rowIdKey]="'id'"
+                          [expandedDetails]="scopeExpandedDetailsForTable"
+                          [rowContentTemplate]="scopeRowContent"
+                          [expandedRowTemplate]="scopeExpanded"
+                          [actionsTemplate]="scopeActions"
+                          [sortColumn]="data.scopeSortColumn()"
+                          [sortDir]="data.scopeSortDir()"
+                          [rows]="data.scopePage()"
+                          [status]="data.scopesStatus() === 'loading' ? 'loading' : data.scopesStatus() === 'error' ? 'error' : 'loaded'"
+                          [loadingMessage]="'Loading scopes...'"
+                          [errorMessage]="'Failed to load scopes.'"
+                          [emptyMessage]="'No scopes found.'"
+                          [pageSizeOptions]="data.pageSizeOptions"
+                          [pageSize]="data.scopePageSize()"
+                          [pageIndex]="data.scopePageIndex()"
+                          [totalPages]="data.scopeTotalPages()"
+                          [trackByKey]="'id'"
+                          (toggleTablePanel)="data.toggleScopeTablePanel()"
+                          (dropColumn)="onScopeDropColumn($event)"
+                          (removeColumn)="onScopeRemoveColumn($event)"
+                          (addColumn)="onScopeAddColumn($event)"
+                          (setColumnQuery)="data.setScopeColumnQuery($event)"
+                          (toggleFilter)="onScopeToggleFilter($event)"
+                          (setColumnFilter)="onScopeSetColumnFilter($event)"
+                          (toggleSort)="onScopeToggleSort($event)"
+                          (rowToggle)="onToggleExpanded($event)"
+                          (setPageSize)="data.setScopePageSize($event)"
+                          (prevPage)="data.prevScopePage()"
+                          (nextPage)="data.nextScopePage()"
+                        ></app-data-table>
+
+          </mat-card-content>
+        </mat-card>
+      }
+
+      @if (data.section() === 'tests') {
+        <mat-card class="section-card data-card data-card--flush ctw-panel">
+          <mat-card-content>
+            <div class="list-header">
+              <button
+                mat-stroked-button
+                type="button"
+                class="back-btn"
+                (click)="data.backToScopes()"
+                aria-label="Back to scopes"
+              >
+                ← Back
+              </button>
+              <h2>{{ data.selectedScopeId() ? data.getScopeName(data.selectedScopeId()) : 'All Tests' }}</h2>
+            </div>
+            <ng-template #testToolbar>
+              <button
+                type="button"
+                class="filter-panel-toggle"
+                [class.active]="data.testFilterPanelOpen()"
+                (click)="data.toggleTestFilterPanel()"
+                aria-label="Toggle extended filtering"
+              >
+                <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+                <span>Extended filtering</span>
+              </button>
+              <span class="toolbar-spacer"></span>
+              <div class="toolbar-actions">
+                <button
+                  mat-flat-button
+                  color="primary"
+                  type="button"
+                  (click)="data.importSbomToSelectedScope()"
+                  [disabled]="!data.canWrite() || !data.selectedProductId() || !data.selectedScopeId() || data.isMutating()"
+                >
+                  Import SBOM
+                </button>
+              </div>
+            </ng-template>
+            <ng-template #testPanel>
+              @if (data.isMutating()) {
+                <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+              }
+              @if (data.testFilterPanelOpen()) {
+                <div class="extended-filter-panel">
+                  <div class="filter-grid">
+                  <div class="filter-field">
+                    <span class="filter-label" id="test-name-filter-label">Name</span>
+                    <mat-button-toggle-group
+                      aria-labelledby="test-name-filter-label"
+                      class="filter-mode-toggle"
+                      [value]="data.testFilterMode().name"
+                      (change)="data.setTestFilterMode('name', $event.value)"
+                    >
+                      <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                      <mat-button-toggle value="select">Select</mat-button-toggle>
+                    </mat-button-toggle-group>
+                    @if (data.testFilterMode().name === 'select') {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <mat-select
+                          aria-labelledby="test-name-filter-label"
+                          multiple
+                          [value]="data.testMultiFilters().name"
+                          (selectionChange)="data.setTestMultiFilter('name', $event.value)"
+                        >
+                          @for (option of data.testFilterOptions().name; track option) {
+                            <mat-option [value]="option">{{ option }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    } @else {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <input
+                          aria-labelledby="test-name-filter-label"
+                          matInput
+                          placeholder="Contains"
+                          [value]="data.testColumnFilters().name"
+                          (input)="data.setTestColumnFilter('name', $event)"
+                        />
+                      </mat-form-field>
+                    }
+                  </div>
+                  <div class="filter-field">
+                    <span class="filter-label" id="test-id-filter-label">ID</span>
+                    <mat-button-toggle-group
+                      aria-labelledby="test-id-filter-label"
+                      class="filter-mode-toggle"
+                      [value]="data.testFilterMode().id"
+                      (change)="data.setTestFilterMode('id', $event.value)"
+                    >
+                      <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                      <mat-button-toggle value="select">Select</mat-button-toggle>
+                    </mat-button-toggle-group>
+                    @if (data.testFilterMode().id === 'select') {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <mat-select
+                          aria-labelledby="test-id-filter-label"
+                          multiple
+                          [value]="data.testMultiFilters().id"
+                          (selectionChange)="data.setTestMultiFilter('id', $event.value)"
+                        >
+                          @for (option of data.testFilterOptions().id; track option) {
+                            <mat-option [value]="option">{{ option }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    } @else {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <input
+                          aria-labelledby="test-id-filter-label"
+                          matInput
+                          placeholder="Contains"
+                          [value]="data.testColumnFilters().id"
+                          (input)="data.setTestColumnFilter('id', $event)"
+                        />
+                      </mat-form-field>
+                    }
+                  </div>
+                  <div class="filter-field">
+                    <span class="filter-label" id="test-components-filter-label">Components</span>
+                    <mat-button-toggle-group
+                      aria-labelledby="test-components-filter-label"
+                      class="filter-mode-toggle"
+                      [value]="data.testFilterMode().components"
+                      (change)="data.setTestFilterMode('components', $event.value)"
+                    >
+                      <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                      <mat-button-toggle value="select">Select</mat-button-toggle>
+                    </mat-button-toggle-group>
+                    @if (data.testFilterMode().components === 'select') {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <mat-select
+                          aria-labelledby="test-components-filter-label"
+                          multiple
+                          [value]="data.testMultiFilters().components"
+                          (selectionChange)="data.setTestMultiFilter('components', $event.value)"
+                        >
+                          @for (option of data.testFilterOptions().components; track option) {
+                            <mat-option [value]="option">{{ option }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    } @else {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <input
+                          aria-labelledby="test-components-filter-label"
+                          matInput
+                          placeholder="Contains"
+                          [value]="data.testColumnFilters().components"
+                          (input)="data.setTestColumnFilter('components', $event)"
+                        />
+                      </mat-form-field>
+                    }
+                  </div>
+                  <div class="filter-field">
+                    <span class="filter-label" id="test-updated-filter-label">Updated</span>
+                    <mat-button-toggle-group
+                      aria-labelledby="test-updated-filter-label"
+                      class="filter-mode-toggle"
+                      [value]="data.testFilterMode().updated"
+                      (change)="data.setTestFilterMode('updated', $event.value)"
+                    >
+                      <mat-button-toggle value="contains">Contains</mat-button-toggle>
+                      <mat-button-toggle value="select">Select</mat-button-toggle>
+                    </mat-button-toggle-group>
+                    @if (data.testFilterMode().updated === 'select') {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <mat-select
+                          aria-labelledby="test-updated-filter-label"
+                          multiple
+                          [value]="data.testMultiFilters().updated"
+                          (selectionChange)="data.setTestMultiFilter('updated', $event.value)"
+                        >
+                          @for (option of data.testFilterOptions().updated; track option) {
+                            <mat-option [value]="option">{{ option }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    } @else {
+                      <mat-form-field appearance="outline" class="filter-input">
+                        <input
+                          aria-labelledby="test-updated-filter-label"
+                          matInput
+                          placeholder="Contains"
+                          [value]="data.testColumnFilters().updated"
+                          (input)="data.setTestColumnFilter('updated', $event)"
+                        />
+                      </mat-form-field>
+                    }
+                  </div>
+                </div>
+                  <div class="filter-actions">
+                    <button mat-stroked-button type="button" (click)="data.clearTestFilters()">
+                      Clear filters
+                    </button>
+                  </div>
+                </div>
+              }
+            </ng-template>
+                        <ng-template #testRowContent let-test let-columns="columns">
+                          @for (column of columns; track column.key) {
+                            <td [class]="column.className ?? ''">
+                              {{ data.testColumnValue(test, column.key) }}
+                            </td>
+                          }
+                        </ng-template>
+
+                        <ng-template #testExpanded let-test let-columns="columns">
+                          <div class="expanded-content">
+                            <app-data-table-expanded-details
+                              [columns]="2"
+                              [items]="testExpandedItems(test)"
+                              [visibleColumns]="columns"
+                              [visibleRow]="test"
+                              [visibleValue]="exportValueForTests"
+                            ></app-data-table-expanded-details>
+                          </div>
+                        </ng-template>
+
+                        <ng-template #testActions let-test>
+                          <div class="row-actions">
+                            <button
+                              mat-stroked-button
+                              type="button"
+                              class="open-btn"
+                              (click)="data.onArrowClick($event, test)"
+                            >
+                              <span class="btn-inner">
+                                <span>Open</span>
+                                <lucide-icon [img]="ArrowRight" aria-hidden="true"></lucide-icon>
+                              </span>
+                            </button>
+                            <button
+                              mat-icon-button
+                              type="button"
+                              aria-label="Test actions"
+                              [matMenuTriggerFor]="testMenu"
+                              [matMenuTriggerData]="{ test: test }"
+                              (click)="data.stopEvent($event)"
+                            >
+                              <lucide-icon [img]="MoreVertical" aria-hidden="true"></lucide-icon>
+                            </button>
+                          </div>
+                        </ng-template>
+
+                        <mat-menu #testMenu="matMenu">
+                          <ng-template matMenuContent let-test="test">
+                            <button mat-menu-item type="button" (click)="data.openTestJiraSettings(test)">
+                              Jira settings
+                            </button>
+                            @if (data.isAdmin()) {
+                              <button mat-menu-item type="button" (click)="data.deleteTest(test)">
+                                Delete
+                              </button>
+                            }
+                          </ng-template>
+                        </mat-menu>
+
+                        <app-data-table
+                          [exportFilenameBase]="'tests'"
+                          [exportRows]="data.testRows()"
+                          [exportValue]="exportValueForTests"
+                          [columns]="data.testColumnDefinitions()"
+                          [columnOrder]="data.testColumnOrder()"
+                          [columnQuery]="data.testColumnQuery()"
+                          [availableColumns]="data.availableTestColumns()"
+                          [tablePanelOpen]="data.testTablePanelOpen()"
+                          [showTablePanel]="true"
+                          [lockedColumns]="['name']"
+                          [toolbarTemplate]="testToolbar"
+                          [panelTemplate]="testPanel"
+                          [showFilterToggle]="true"
+                          [showActionsColumn]="true"
+                          [filterRowVisible]="data.testFilterRowVisible()"
+                          [filterVisible]="data.testFilterVisible()"
+                          [columnFilters]="data.testColumnFilters()"
+                          [enableSorting]="true"
+                          [expandable]="true"
+                          [expandedRowIds]="data.testExpandedIds()"
+                          [rowIdKey]="'id'"
+                          [expandedDetails]="testExpandedDetailsForTable"
+                          [rowContentTemplate]="testRowContent"
+                          [expandedRowTemplate]="testExpanded"
+                          [actionsTemplate]="testActions"
+                          [sortColumn]="data.testSortColumn()"
+                          [sortDir]="data.testSortDir()"
+                          [rows]="data.testPage()"
+                          [status]="data.testsStatus() === 'loading' ? 'loading' : data.testsStatus() === 'error' ? 'error' : 'loaded'"
+                          [loadingMessage]="'Loading tests...'"
+                          [errorMessage]="'Failed to load tests.'"
+                          [emptyMessage]="'No tests found.'"
+                          [pageSizeOptions]="data.pageSizeOptions"
+                          [pageSize]="data.testPageSize()"
+                          [pageIndex]="data.testPageIndex()"
+                          [totalPages]="data.testTotalPages()"
+                          [trackByKey]="'id'"
+                          (toggleTablePanel)="data.toggleTestTablePanel()"
+                          (dropColumn)="onTestDropColumn($event)"
+                          (removeColumn)="onTestRemoveColumn($event)"
+                          (addColumn)="onTestAddColumn($event)"
+                          (setColumnQuery)="data.setTestColumnQuery($event)"
+                          (toggleFilter)="onTestToggleFilter($event)"
+                          (setColumnFilter)="onTestSetColumnFilter($event)"
+                          (toggleSort)="onTestToggleSort($event)"
+                          (rowToggle)="onToggleExpanded($event)"
+                          (setPageSize)="data.setTestPageSize($event)"
+                          (prevPage)="data.prevTestPage()"
+                          (nextPage)="data.nextTestPage()"
+                        ></app-data-table>
+
+          </mat-card-content>
+        </mat-card>
+      }
+    </section>

@@ -1,0 +1,33 @@
+.field {
+  width: 100%;
+}
+
+.user-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 10px;
+}
+
+.grid-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+mat-dialog-content {
+  min-width: min(700px, 96vw);
+  padding-top: 14px;
+}
+
+@media (max-width: 780px) {
+  .user-form {
+    gap: 12px;
+    padding-top: 8px;
+  }
+
+  .grid-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}

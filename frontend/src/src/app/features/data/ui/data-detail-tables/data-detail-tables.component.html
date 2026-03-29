@@ -1,0 +1,902 @@
+<mat-card class="test-detail data-card ctw-panel">
+  <mat-card-content>
+  <div class="detail-header">
+    <button
+      mat-stroked-button
+      type="button"
+      class="back-btn"
+      (click)="data.backToTests()"
+      aria-label="Back to tests"
+    >
+      ← Back
+    </button>
+    <h2>{{ data.selectedTest()?.name ?? 'Test detail' }}</h2>
+  </div>
+
+  <div class="detail-summary">
+    <div class="summary-item">
+      <span class="summary-label">Test ID</span>
+      <span class="summary-value mono">{{ data.selectedTestId() ?? '-' }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Product</span>
+      <span class="summary-value">{{ data.getProductName(data.selectedProductId()) }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Scope</span>
+      <span class="summary-value">{{ data.getScopeName(data.selectedScopeId()) }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">SBOM</span>
+      <span class="summary-value">{{ data.formatSbom(data.selectedTest()) }}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Public</span>
+      <span class="summary-value">
+        {{
+          data.selectedTest()?.isPublic === true
+            ? 'Yes'
+            : data.selectedTest()?.isPublic === false
+              ? 'No'
+              : '-'
+        }}
+      </span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Updated</span>
+      <span class="summary-value">{{ data.selectedTest()?.updatedAt ?? '-' }}</span>
+    </div>
+  </div>
+
+  <div class="detail-section">
+	    <div class="detail-section-header">
+	      <div class="detail-title">
+	        <h3>Components</h3>
+	        <span class="detail-count">{{ data.componentsTotalCount() ?? '-' }}</span>
+	      </div>
+	    </div>
+	    <ng-template #componentsToolbar>
+	      <button
+	        type="button"
+	        class="filter-panel-toggle"
+	        (click)="data.toggleComponentFilterPanel()"
+	        aria-label="Toggle extended filtering"
+	      >
+	        <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+	        <span>Extended filtering</span>
+	      </button>
+	      <span class="toolbar-spacer"></span>
+	    </ng-template>
+
+	    <ng-template #componentsPanel>
+	      @if (data.componentFilterPanelOpen()) {
+	        <app-advanced-filter-panel
+	          [fields]="componentAdvancedFields()"
+	          [idPrefix]="'component'"
+	          (modeChange)="onComponentFilterModeChange($event)"
+	          (valueChange)="onComponentFilterValueChange($event)"
+	          (selectionChange)="onComponentFilterSelectionChange($event)"
+	          (clearFilters)="data.clearComponentFilters()"
+	        ></app-advanced-filter-panel>
+	      }
+	    </ng-template>
+	    @if (data.componentsStatus() === 'loading') {
+	      <div class="detail-empty">
+	        <app-loading-indicator [message]="'Loading components...'" [compact]="true"></app-loading-indicator>
+      </div>
+    } @else if (data.componentsStatus() === 'error') {
+      <p class="detail-empty">Components are unavailable for this test.</p>
+    } @else {
+      <ng-template #componentRowContent let-component let-columns="columns">
+        @for (column of columns; track column.key) {
+          <td
+            [class]="(column.className ?? '') + (column.key === 'purl' ? ' mono' : '')"
+            [attr.title]="componentColumnTitle(component, column.key)"
+          >
+            {{ componentColumnValue(component, column.key) }}
+          </td>
+        }
+      </ng-template>
+
+      <ng-template #componentExpanded let-component>
+        <div class="expanded-content component-details">
+          <div>
+            <span class="summary-label">PURL</span>
+            <span class="summary-value mono">
+              {{ data.decodePurl(component.purl) }}
+              <app-copy-button [value]="data.decodePurl(component.purl)" [ariaLabel]="'Copy PURL'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Pkg Type</span>
+            <span class="summary-value">
+              {{ component.pkgType ?? '-' }}
+              <app-copy-button [value]="component.pkgType ?? '-'" [ariaLabel]="'Copy type'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Pkg Name</span>
+            <span class="summary-value">
+              {{ component.pkgName ?? '-' }}
+              <app-copy-button [value]="component.pkgName ?? '-'" [ariaLabel]="'Copy name'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Version</span>
+            <span class="summary-value">
+              {{ component.version ?? '-' }}
+              <app-copy-button [value]="component.version ?? '-'" [ariaLabel]="'Copy version'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Pkg Namespace</span>
+            <span class="summary-value">
+              {{ component.pkgNamespace ?? '-' }}
+              <app-copy-button [value]="component.pkgNamespace ?? '-'" [ariaLabel]="'Copy namespace'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">SBOM Type</span>
+            <span class="summary-value">
+              {{ component.sbomType ?? '-' }}
+              <app-copy-button [value]="component.sbomType ?? '-'" [ariaLabel]="'Copy SBOM type'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Publisher</span>
+            <span class="summary-value">
+              {{ component.publisher ?? '-' }}
+              <app-copy-button [value]="component.publisher ?? '-'" [ariaLabel]="'Copy publisher'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Supplier</span>
+            <span class="summary-value">
+              {{ component.supplier ?? '-' }}
+              <app-copy-button [value]="component.supplier ?? '-'" [ariaLabel]="'Copy supplier'"></app-copy-button>
+            </span>
+          </div>
+          <div>
+            <span class="summary-label">Licenses</span>
+            <span class="summary-value">
+              {{ data.formatLicensesDetail(component.licenses) }}
+              <app-copy-button [value]="data.formatLicensesDetail(component.licenses)" [ariaLabel]="'Copy licenses'"></app-copy-button>
+            </span>
+          </div>
+        </div>
+        <app-component-malware-panel
+          [component]="component"
+          [productId]="data.selectedProductId()"
+          [scopeId]="data.selectedScopeId()"
+          [testId]="data.selectedTestId()"
+        ></app-component-malware-panel>
+      </ng-template>
+
+	      <app-data-table
+	        [exportFilenameBase]="'components'"
+	        [exportEnabled]="data.componentsLoadedAll()"
+	        [exportRows]="data.componentsLoadedAll() ? data.componentRows() : null"
+	        [exportValue]="exportValueForComponents"
+	        [columns]="data.componentColumnDefinitions"
+	        [columnOrder]="data.componentColumnOrder()"
+	        [columnQuery]="data.componentColumnQuery()"
+	        [availableColumns]="data.availableComponentColumns()"
+	        [tablePanelOpen]="data.componentTablePanelOpen()"
+	        [showTablePanel]="data.componentsLoadedAll()"
+	        [lockedColumns]="['purl']"
+	        [toolbarTemplate]="data.componentsLoadedAll() ? componentsToolbar : null"
+	        [panelTemplate]="data.componentsLoadedAll() ? componentsPanel : null"
+	        [showFilterToggle]="data.componentsLoadedAll()"
+	        [tableClass]="'detail-table components-table'"
+	        [filterRowVisible]="data.componentsLoadedAll() && data.componentFilterRowVisible()"
+	        [filterVisible]="data.componentsLoadedAll() ? data.componentFilterVisible() : {}"
+        [columnFilters]="data.componentsLoadedAll() ? data.componentColumnFilters() : {}"
+        [enableSorting]="data.componentsLoadedAll()"
+        [expandable]="true"
+        [expandedRowIds]="data.componentExpandedIds()"
+        [rowIdKey]="'id'"
+        [rowContentTemplate]="componentRowContent"
+        [expandedRowTemplate]="componentExpanded"
+        [sortColumn]="data.componentSortColumn()"
+        [sortDir]="data.componentSortDir()"
+        [rows]="data.componentPage()"
+        [status]="'loaded'"
+        [emptyMessage]="'No results for current filters.'"
+        [pageSizeOptions]="data.componentsLoadedAll() ? data.pageSizeOptions : []"
+        [pageSize]="data.componentPageSize()"
+        [pageIndex]="data.componentPageIndex()"
+        [totalPages]="data.componentTotalPages()"
+        [trackByKey]="'id'"
+        [paginationEnabled]="data.componentsLoadedAll()"
+	        [limitedTotal]="data.componentsLoadedAll() ? null : data.componentsTotalCount()"
+	        [limitedShown]="data.componentTotal()"
+	        [limitedActionLabel]="'Load all'"
+	        [limitedActionDisabled]="data.componentsStatus() === 'loading'"
+	        (loadAllRequested)="data.loadAllComponents()"
+	        (toggleTablePanel)="data.toggleComponentTablePanel()"
+	        (dropColumn)="onComponentDropColumn($event)"
+	        (removeColumn)="onComponentRemoveColumn($event)"
+	        (addColumn)="onComponentAddColumn($event)"
+	        (setColumnQuery)="data.setComponentColumnQuery($event)"
+	        (toggleFilter)="onToggleComponentFilter($event.key, $event.event)"
+	        (setColumnFilter)="onSetComponentColumnFilter($event.key, $event.event)"
+	        (toggleSort)="onToggleComponentSort($event)"
+	        (rowToggle)="data.toggleComponent($event.toString())"
+        (setPageSize)="data.setComponentPageSize($event)"
+        (prevPage)="data.prevComponentPage()"
+        (nextPage)="data.nextComponentPage()"
+      ></app-data-table>
+    }
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section-header">
+      <div class="detail-title">
+        <h3>Revisions</h3>
+        <span class="detail-count">{{ data.revisionTotal() }}</span>
+      </div>
+    </div>
+    <div class="extended-filter">
+      <div class="filter-toolbar">
+        <button
+          type="button"
+          class="filter-panel-toggle"
+          (click)="data.toggleRevisionFilterPanel()"
+          aria-label="Toggle extended filtering"
+        >
+          <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+          <span>Extended filtering</span>
+        </button>
+        <button
+          type="button"
+          class="filter-panel-toggle table-panel-toggle"
+          (click)="data.toggleRevisionTablePanel()"
+          aria-label="Toggle table options"
+        >
+          <lucide-icon [img]="Table" aria-hidden="true"></lucide-icon>
+          <span>Table</span>
+        </button>
+      </div>
+      @if (data.revisionTablePanelOpen()) {
+        <div class="table-options-panel">
+          <div class="table-options-header">
+            <div>
+              <strong>Visible columns</strong>
+              <span>Drag chips to reorder.</span>
+            </div>
+          </div>
+          <mat-chip-grid
+            class="column-chip-grid"
+            cdkDropList
+            [cdkDropListData]="data.revisionColumnOrder()"
+            (cdkDropListDropped)="data.dropRevisionColumn($event)"
+          >
+            @for (column of data.revisionColumnOrder(); track column) {
+              <mat-chip-row
+                class="column-chip"
+                cdkDrag
+                [removable]="column !== 'revision'"
+                (removed)="data.removeRevisionColumn(column)"
+              >
+                <span class="chip-label">{{ data.revisionColumnLabel(column) }}</span>
+                <span class="chip-drag" cdkDragHandle>
+                  <lucide-icon [img]="GripVertical" aria-hidden="true"></lucide-icon>
+                </span>
+                @if (column !== 'revision') {
+                  <button matChipRemove aria-label="Remove column">
+                    <lucide-icon [img]="X" aria-hidden="true"></lucide-icon>
+                  </button>
+                }
+              </mat-chip-row>
+            }
+          </mat-chip-grid>
+          <mat-form-field appearance="outline" class="column-add-field">
+            <input
+              matInput
+              placeholder="Add column"
+              [value]="data.revisionColumnQuery()"
+              (input)="data.setRevisionColumnQuery($event)"
+              [matAutocomplete]="revisionColumnAuto"
+            />
+            <mat-autocomplete
+              #revisionColumnAuto="matAutocomplete"
+              (optionSelected)="data.addRevisionColumn($event.option.value)"
+            >
+              @for (option of data.availableRevisionColumns(); track option.key) {
+                <mat-option [value]="option.key">{{ option.label }}</mat-option>
+              }
+            </mat-autocomplete>
+          </mat-form-field>
+        </div>
+      }
+    </div>
+    @if (data.revisionFilterPanelOpen()) {
+      <div class="extended-filter-panel">
+        <div class="filter-grid">
+          <div class="filter-field">
+            <span class="filter-label" id="revision-revision-filter-label">Revision</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-revision-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().revision"
+              (change)="data.setRevisionFilterMode('revision', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().revision === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-revision-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().revision"
+                  (selectionChange)="data.setRevisionMultiFilter('revision', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().revision; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-revision-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().revision"
+                  (input)="data.setRevisionColumnFilter('revision', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+          <div class="filter-field">
+            <span class="filter-label" id="revision-sbomSha-filter-label">SBOM SHA</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-sbomSha-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().sbomSha"
+              (change)="data.setRevisionFilterMode('sbomSha', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().sbomSha === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-sbomSha-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().sbomSha"
+                  (selectionChange)="data.setRevisionMultiFilter('sbomSha', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().sbomSha; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-sbomSha-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().sbomSha"
+                  (input)="data.setRevisionColumnFilter('sbomSha', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+          <div class="filter-field">
+            <span class="filter-label" id="revision-producer-filter-label">Producer</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-producer-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().producer"
+              (change)="data.setRevisionFilterMode('producer', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().producer === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-producer-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().producer"
+                  (selectionChange)="data.setRevisionMultiFilter('producer', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().producer; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-producer-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().producer"
+                  (input)="data.setRevisionColumnFilter('producer', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+          <div class="filter-field">
+            <span class="filter-label" id="revision-tags-filter-label">Tags</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-tags-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().tags"
+              (change)="data.setRevisionFilterMode('tags', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().tags === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-tags-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().tags"
+                  (selectionChange)="data.setRevisionMultiFilter('tags', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().tags; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-tags-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().tags"
+                  (input)="data.setRevisionColumnFilter('tags', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+          <div class="filter-field">
+            <span class="filter-label" id="revision-components-filter-label">Components</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-components-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().components"
+              (change)="data.setRevisionFilterMode('components', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().components === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-components-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().components"
+                  (selectionChange)="data.setRevisionMultiFilter('components', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().components; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-components-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().components"
+                  (input)="data.setRevisionColumnFilter('components', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+          <div class="filter-field">
+            <span class="filter-label" id="revision-active-filter-label">Active</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-active-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().active"
+              (change)="data.setRevisionFilterMode('active', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().active === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-active-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().active"
+                  (selectionChange)="data.setRevisionMultiFilter('active', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().active; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-active-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().active"
+                  (input)="data.setRevisionColumnFilter('active', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+          <div class="filter-field">
+            <span class="filter-label" id="revision-lastModified-filter-label">Last modified</span>
+            <mat-button-toggle-group
+              aria-labelledby="revision-lastModified-filter-label"
+              class="filter-mode-toggle"
+              [value]="data.revisionFilterMode().lastModified"
+              (change)="data.setRevisionFilterMode('lastModified', $event.value)"
+            >
+              <mat-button-toggle value="contains">Contains</mat-button-toggle>
+              <mat-button-toggle value="select">Select</mat-button-toggle>
+            </mat-button-toggle-group>
+            @if (data.revisionFilterMode().lastModified === 'select') {
+              <mat-form-field appearance="outline" class="filter-input">
+                <mat-select
+                  aria-labelledby="revision-lastModified-filter-label"
+                  multiple
+                  [value]="data.revisionMultiFilters().lastModified"
+                  (selectionChange)="data.setRevisionMultiFilter('lastModified', $event.value)"
+                >
+                  @for (option of data.revisionFilterOptions().lastModified; track option) {
+                    <mat-option [value]="option">{{ option }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" class="filter-input">
+                <input
+                  aria-labelledby="revision-lastModified-filter-label"
+                  matInput
+                  placeholder="Contains"
+                  [value]="data.revisionColumnFilters().lastModified"
+                  (input)="data.setRevisionColumnFilter('lastModified', $event)"
+                />
+              </mat-form-field>
+            }
+          </div>
+        </div>
+        <div class="filter-actions">
+          <button mat-stroked-button type="button" (click)="data.clearRevisionFilters()">
+            Clear filters
+          </button>
+        </div>
+      </div>
+    }
+    @if (data.revisionsStatus() === 'loading') {
+      <div class="detail-empty">
+        <app-loading-indicator [message]="'Loading revisions...'" [compact]="true"></app-loading-indicator>
+      </div>
+    } @else if (data.revisionsStatus() === 'error') {
+      <p class="detail-empty">Failed to load revisions.</p>
+    } @else {
+      <div class="table-scroll mat-elevation-z1">
+        <table class="detail-table data-table-grid">
+          <thead>
+            <tr>
+              @for (column of data.revisionColumnDefinitions(); track column.key) {
+                <th
+                  [class]="column.className ? 'sortable ' + column.className : 'sortable'"
+                  (click)="data.toggleRevisionSort(column.sortKey)"
+                >
+                  <span>{{ column.label }}</span>
+                  <span class="header-icons">
+                    <button
+                      type="button"
+                      class="filter-toggle"
+                      [class.active]="data.revisionFilterVisible()[column.filterKey]"
+                      (click)="data.toggleRevisionFilter(column.filterKey, $event)"
+                      [attr.aria-label]="'Filter by ' + column.label"
+                    >
+                      <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+                    </button>
+                    <span class="sort-indicator">
+                      {{ data.sortIndicator(column.sortKey, data.revisionSortColumn(), data.revisionSortDir()) }}
+                    </span>
+                  </span>
+                </th>
+              }
+            </tr>
+            @if (data.revisionFilterRowVisible()) {
+              <tr class="filter-row">
+                @for (column of data.revisionColumnDefinitions(); track column.key) {
+                  <th [class]="column.className ?? ''">
+                    @if (data.revisionFilterVisible()[column.filterKey]) {
+                      <input
+                        class="column-filter"
+                        type="search"
+                        placeholder="Filter"
+                        [attr.size]="data.filterInputSize(data.revisionColumnFilters()[column.filterKey])"
+                        [value]="data.revisionColumnFilters()[column.filterKey]"
+                        (input)="data.setRevisionColumnFilter(column.filterKey, $event)"
+                      />
+                    }
+                  </th>
+                }
+              </tr>
+            }
+          </thead>
+          <tbody>
+            @if (data.revisionRows().length === 0) {
+              <tr>
+                <td [attr.colspan]="data.revisionColumnDefinitions().length" class="empty">
+                  No results for current filters.
+                </td>
+              </tr>
+            } @else {
+              @for (revision of data.revisionPage(); track revision.id) {
+                <tr
+                  class="row"
+                  (click)="data.toggleRevision(revision.id)"
+                  [attr.aria-expanded]="data.isRevisionExpanded(revision.id)"
+                  [class.expanded-row]="data.isRevisionExpanded(revision.id)"
+                >
+                  @for (column of data.revisionColumnDefinitions(); track column.key) {
+                    <td [class]="column.className ?? ''">
+                      {{ data.revisionColumnValue(revision, column.key) }}
+                    </td>
+                  }
+                </tr>
+                @if (data.isRevisionExpanded(revision.id)) {
+                  <tr class="expanded">
+                    <td [attr.colspan]="data.revisionColumnDefinitions().length">
+                      <div class="expanded-content component-details">
+                        <div>
+                          <span class="summary-label">Revision</span>
+                          <span class="summary-value mono">
+                            {{ revision.id }}
+                            <app-copy-button [value]="revision.id" [ariaLabel]="'Copy revision id'"></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">SBOM SHA</span>
+                          <span class="summary-value mono">
+                            {{ revision.sbomSha256 ?? '-' }}
+                            <app-copy-button [value]="revision.sbomSha256 ?? '-'" [ariaLabel]="'Copy SBOM SHA'"></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">Producer</span>
+                          <span class="summary-value">
+                            {{ revision.sbomProducer ?? '-' }}
+                            <app-copy-button [value]="revision.sbomProducer ?? '-'" [ariaLabel]="'Copy producer'"></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">Tags</span>
+                          <span class="summary-value">
+                            {{ data.formatTags(revision.tags ?? []) }}
+                            <app-copy-button [value]="data.formatTags(revision.tags ?? [])" [ariaLabel]="'Copy tags'"></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">Components</span>
+                          <span class="summary-value">
+                            {{ revision.componentsImportedCount ?? 0 }}
+                            <app-copy-button
+                              [value]="(revision.componentsImportedCount ?? 0).toString()"
+                              [ariaLabel]="'Copy components count'"
+                            ></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">Active</span>
+                          <span class="summary-value">
+                            {{ revision.isActive ? 'Yes' : 'No' }}
+                            <app-copy-button [value]="revision.isActive ? 'Yes' : 'No'" [ariaLabel]="'Copy active'"></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">Last modified</span>
+                          <span class="summary-value">
+                            {{ revision.lastModifiedAt ?? revision.createdAt ?? '-' }}
+                            <app-copy-button
+                              [value]="revision.lastModifiedAt ?? revision.createdAt ?? '-'"
+                              [ariaLabel]="'Copy last modified'"
+                            ></app-copy-button>
+                          </span>
+                        </div>
+                        <div>
+                          <span class="summary-label">Created at</span>
+                          <span class="summary-value">
+                            {{ revision.createdAt ?? '-' }}
+                            <app-copy-button [value]="revision.createdAt ?? '-'" [ariaLabel]="'Copy created at'"></app-copy-button>
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                }
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="table-pagination">
+        <div class="page-size">
+          <span>Rows</span>
+          <mat-form-field appearance="outline">
+            <mat-select
+              [value]="data.revisionPageSize()"
+              (selectionChange)="data.setRevisionPageSize($event.value)"
+              panelClass="page-size-panel"
+            >
+              @for (size of data.pageSizeOptions; track size) {
+                <mat-option [value]="size">{{ size === 0 ? 'All' : size }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </div>
+        <div class="page-info">
+          Page {{ data.revisionPageIndex() + 1 }} of {{ data.revisionTotalPages() }}
+        </div>
+        <div class="page-actions">
+          <button
+            mat-stroked-button
+            type="button"
+            (click)="data.prevRevisionPage()"
+            [disabled]="data.revisionPageIndex() === 0"
+          >
+            Prev
+          </button>
+          <button
+            mat-stroked-button
+            type="button"
+            (click)="data.nextRevisionPage()"
+            [disabled]="data.revisionPageIndex() + 1 >= data.revisionTotalPages()"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section-header">
+      <div class="detail-title">
+        <h3>Last changes</h3>
+        <span class="detail-count">{{ data.lastChangeTotal() }}</span>
+      </div>
+    </div>
+    <ng-template #lastChangesToolbar>
+      <button
+        type="button"
+        class="filter-panel-toggle"
+        [class.active]="data.lastChangeFilterPanelOpen()"
+        (click)="data.toggleLastChangeFilterPanel()"
+        aria-label="Toggle extended filtering"
+      >
+        <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+        <span>Extended filtering</span>
+      </button>
+      <span class="toolbar-spacer"></span>
+    </ng-template>
+    <ng-template #inlineRevisionChangesToolbar>
+      <button
+        type="button"
+        class="filter-panel-toggle"
+        [class.active]="data.revisionChangeFilterPanelOpen()"
+        (click)="data.toggleRevisionChangeFilterPanel()"
+        aria-label="Toggle extended filtering"
+      >
+        <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+        <span>Extended filtering</span>
+      </button>
+      <span class="toolbar-spacer"></span>
+    </ng-template>
+    <ng-template #lastChangeExpanded let-change>
+      <div class="inline-revision-changes">
+        <div class="detail-note">
+          Showing details for revision <span class="mono">{{ change.toRevisionId }}</span>
+          (status: {{ (change.status ?? '-').toUpperCase() }}).
+        </div>
+        <app-data-table
+          [exportFilenameBase]="'test_revision_changes'"
+          [exportRows]="data.revisionChangeRows()"
+          [exportValue]="exportValueForRevisionChanges"
+          [columns]="data.revisionChangeColumnDefinitions()"
+          [columnOrder]="data.revisionChangeColumnOrder()"
+          [columnQuery]="data.revisionChangeColumnQuery()"
+          [availableColumns]="data.availableRevisionChangeColumns()"
+          [tablePanelOpen]="data.revisionChangeTablePanelOpen()"
+          [showTablePanel]="true"
+          [lockedColumns]="['diffType']"
+          [toolbarTemplate]="inlineRevisionChangesToolbar"
+          [showFilterToggle]="true"
+          [tableClass]="'detail-table reimport-revision-changes-table'"
+          [filterRowVisible]="data.revisionChangeFilterRowVisible()"
+          [filterVisible]="data.revisionChangeFilterVisible()"
+          [columnFilters]="data.revisionChangeColumnFilters()"
+          [enableSorting]="true"
+          [rowValue]="exportValueForRevisionChanges"
+          [sortColumn]="data.revisionChangeSortColumn()"
+          [sortDir]="data.revisionChangeSortDir()"
+          [rows]="data.revisionChangePage()"
+          [status]="data.revisionChangesTableStatus()"
+          [loadingMessage]="data.revisionChangesLoadingMessage()"
+          [errorMessage]="data.revisionChangesErrorMessage()"
+          [emptyMessage]="'No diff entries for selected revision.'"
+          [pageSizeOptions]="data.pageSizeOptions"
+          [pageSize]="data.revisionChangePageSize()"
+          [pageIndex]="data.revisionChangePageIndex()"
+          [totalPages]="data.revisionChangeTotalPages()"
+          [trackByKey]="'id'"
+          [rowIdKey]="'id'"
+          [paginationEnabled]="true"
+          (toggleTablePanel)="data.toggleRevisionChangeTablePanel()"
+          (dropColumn)="onRevisionChangeDropColumn($event)"
+          (removeColumn)="onRevisionChangeRemoveColumn($event)"
+          (addColumn)="onRevisionChangeAddColumn($event)"
+          (setColumnQuery)="data.setRevisionChangeColumnQuery($event)"
+          (toggleFilter)="onToggleRevisionChangeFilter($event.key, $event.event)"
+          (setColumnFilter)="onSetRevisionChangeColumnFilter($event.key, $event.event)"
+          (toggleSort)="onToggleRevisionChangeSort($event)"
+          (setPageSize)="data.setRevisionChangePageSize($event)"
+          (prevPage)="data.prevRevisionChangePage()"
+          (nextPage)="data.nextRevisionChangePage()"
+        ></app-data-table>
+      </div>
+    </ng-template>
+    <app-data-table
+      [exportFilenameBase]="'test_revision_last_changes'"
+      [exportRows]="data.lastChangeRows()"
+      [exportValue]="exportValueForLastChanges"
+      [columns]="data.lastChangeColumnDefinitions()"
+      [columnOrder]="data.lastChangeColumnOrder()"
+      [columnQuery]="data.lastChangeColumnQuery()"
+      [availableColumns]="data.availableLastChangeColumns()"
+      [tablePanelOpen]="data.lastChangeTablePanelOpen()"
+      [showTablePanel]="true"
+      [lockedColumns]="['toRevision']"
+      [toolbarTemplate]="lastChangesToolbar"
+      [showFilterToggle]="true"
+      [tableClass]="'detail-table reimport-last-changes-table'"
+      [filterRowVisible]="data.lastChangeFilterRowVisible()"
+      [filterVisible]="data.lastChangeFilterVisible()"
+      [columnFilters]="data.lastChangeColumnFilters()"
+      [enableSorting]="true"
+      [expandable]="true"
+      [expandedRowIds]="data.selectedRevisionChangeExpandedIds()"
+      [expandedRowTemplate]="lastChangeExpanded"
+      [rowValue]="exportValueForLastChanges"
+      [sortColumn]="data.lastChangeSortColumn()"
+      [sortDir]="data.lastChangeSortDir()"
+      [rows]="data.lastChangePage()"
+      [status]="data.lastChangesTableStatus()"
+      [loadingMessage]="'Loading last changes...'"
+      [errorMessage]="'Failed to load last changes.'"
+      [emptyMessage]="'No reimport changes yet.'"
+      [pageSizeOptions]="data.pageSizeOptions"
+      [pageSize]="data.lastChangePageSize()"
+      [pageIndex]="data.lastChangePageIndex()"
+      [totalPages]="data.lastChangeTotalPages()"
+      [trackByKey]="'toRevisionId'"
+      [rowIdKey]="'toRevisionId'"
+      [paginationEnabled]="true"
+      (toggleTablePanel)="data.toggleLastChangeTablePanel()"
+      (dropColumn)="onLastChangeDropColumn($event)"
+      (removeColumn)="onLastChangeRemoveColumn($event)"
+      (addColumn)="onLastChangeAddColumn($event)"
+      (setColumnQuery)="data.setLastChangeColumnQuery($event)"
+      (toggleFilter)="onToggleLastChangeFilter($event.key, $event.event)"
+      (setColumnFilter)="onSetLastChangeColumnFilter($event.key, $event.event)"
+      (toggleSort)="onToggleLastChangeSort($event)"
+      (rowToggle)="data.openRevisionChanges($event.toString())"
+      (setPageSize)="data.setLastChangePageSize($event)"
+      (prevPage)="data.prevLastChangePage()"
+      (nextPage)="data.nextLastChangePage()"
+    ></app-data-table>
+  </div>
+  </mat-card-content>
+</mat-card>

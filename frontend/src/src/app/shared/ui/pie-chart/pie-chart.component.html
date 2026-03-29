@@ -1,0 +1,66 @@
+<div
+  #chartRoot
+  class="pie-chart"
+  [class.has-active]="activeSourceIndex() !== null"
+  [style.width.px]="geometry().size"
+  [style.height.px]="geometry().size"
+  role="img"
+  [attr.aria-label]="chartLabel()"
+>
+  <svg [attr.viewBox]="'0 0 ' + geometry().size + ' ' + geometry().size" aria-hidden="true">
+    @for (segment of segments(); track segment.sourceIndex) {
+      <path
+        class="slice"
+        [class.active]="isSliceActive(segment.sourceIndex)"
+        [attr.d]="segment.path"
+        [attr.fill]="segment.color"
+        tabindex="0"
+        role="button"
+        [attr.aria-label]="sliceAriaLabel(segment)"
+        (click)="onSliceClick(segment.sourceIndex)"
+        (mouseenter)="onSliceEnter(segment.sourceIndex)"
+        (mousemove)="onSliceMove($event, segment.sourceIndex)"
+        (mouseleave)="onSliceLeave()"
+        (focus)="onSliceEnter(segment.sourceIndex)"
+        (blur)="onSliceLeave()"
+        (keydown)="onSliceKeydown($event, segment.sourceIndex)"
+      ></path>
+    }
+
+    @if (!segments().length) {
+      <circle
+        class="empty-ring"
+        [attr.cx]="geometry().center"
+        [attr.cy]="geometry().center"
+        [attr.r]="geometry().outerRadius"
+      ></circle>
+    }
+
+    <circle
+      class="pie-hole"
+      [attr.cx]="geometry().center"
+      [attr.cy]="geometry().center"
+      [attr.r]="geometry().innerRadius"
+    ></circle>
+  </svg>
+
+  @if (tooltip(); as tooltipData) {
+    <div
+      class="pie-tooltip mono"
+      [style.left.px]="tooltipData.leftPx"
+      [style.top.px]="tooltipData.topPx"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="pie-tooltip-label">{{ tooltipData.label }}</div>
+      <div>{{ valueLabel() }}: {{ tooltipData.valueText }}</div>
+      <div>Share: {{ tooltipData.shareText }}</div>
+    </div>
+  }
+</div>
+
+@if (showCounter()) {
+  <div class="pie-counter mono">
+    {{ counterLabel() }}: {{ displayedItemsCount() }} / {{ totalItemsCount() }}
+  </div>
+}

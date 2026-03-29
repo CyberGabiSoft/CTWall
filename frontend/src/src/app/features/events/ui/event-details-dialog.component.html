@@ -1,0 +1,91 @@
+<h2 mat-dialog-title>{{ title() }}</h2>
+
+<mat-dialog-content>
+  @if (status() === 'loading') {
+    <app-loading-indicator [message]="'Loading event...'" [size]="28"></app-loading-indicator>
+  } @else if (status() === 'error') {
+    <div class="status-row error" role="status" aria-live="polite">Failed to load event details.</div>
+  } @else {
+    @if (event(); as ev) {
+      <mat-card class="meta-card ctw-panel">
+        <mat-card-content>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <div class="meta-label">Event key</div>
+              <div class="meta-value mono">{{ ev.eventKey }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Category</div>
+              <div class="meta-value">{{ ev.category }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Severity</div>
+              <div class="meta-value">{{ ev.severity }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Status</div>
+              <div class="meta-value">{{ ev.status }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Occurrences</div>
+              <div class="meta-value">{{ ev.occurrences }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">First seen</div>
+              <div class="meta-value mono">{{ ev.firstSeenAt }}</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Last seen</div>
+              <div class="meta-value mono">{{ ev.lastSeenAt }}</div>
+            </div>
+            @if (ev.errorId) {
+              <div class="meta-item">
+                <div class="meta-label">Error ID</div>
+                <div class="meta-value mono">{{ ev.errorId }}</div>
+              </div>
+            }
+            @if (ev.component) {
+              <div class="meta-item">
+                <div class="meta-label">Component</div>
+                <div class="meta-value mono">{{ ev.component }}</div>
+              </div>
+            }
+          </div>
+        </mat-card-content>
+      </mat-card>
+
+      <div class="occurrences-section">
+        <h3>Recent occurrences</h3>
+        @if (occurrences().length === 0) {
+          <div class="status-row">No occurrences found.</div>
+        } @else {
+          @for (occ of occurrences(); track occ.id) {
+            <mat-card class="occ-card ctw-panel">
+              <mat-card-content>
+                <div class="occ-header">
+                  <div class="mono">{{ occ.createdAt }}</div>
+                  <div class="occ-badges">
+                    <span class="badge mono">{{ occ.action }}</span>
+                    @if (occ.actorId) {
+                      <span class="badge mono">actor: {{ occ.actorId }}</span>
+                    }
+                  </div>
+                </div>
+                <app-copy-block [label]="'Details'" [value]="occurrenceDetailsJson(occ)"></app-copy-block>
+              </mat-card-content>
+            </mat-card>
+          }
+        }
+      </div>
+    }
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  @if (canAck()) {
+    <button mat-flat-button color="primary" type="button" (click)="acknowledge()" [disabled]="ackInFlight()">
+      {{ ackInFlight() ? 'Acknowledging...' : 'Acknowledge' }}
+    </button>
+  }
+  <button mat-stroked-button type="button" (click)="close(false)">Close</button>
+</mat-dialog-actions>

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: ctwall
+description: Unified Helm chart for CTWall (backend + frontend + optional PostgreSQL)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+dependencies:
+  - name: postgresql
+    version: 18.5.14
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: ctwall-backend
+    alias: backend
+    version: 1.0.0
+    repository: file://../../backend/helm/ctwall-backend
+    condition: backend.enabled
+  - name: ctwall-frontend
+    alias: frontend
+    version: 1.0.0
+    repository: file://../../frontend/helm/ctwall-frontend
+    condition: frontend.enabled

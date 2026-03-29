@@ -1,0 +1,372 @@
+<section class="dashboard-view">
+  <div class="dashboard-header ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="header-copy ctw-shell-copy">
+      <h2 class="ctw-shell-title">Dashboard</h2>
+      <p class="ctw-shell-subtitle">
+        Project overview for the selected workspace. Business signal with drill-down to Explorer and Posture.
+      </p>
+      <div class="header-meta ctw-shell-meta mono">
+        Project: {{ selectedProjectName() ?? 'N/A' }} · Scope: project
+      </div>
+    </div>
+  </div>
+
+  <mat-card class="dashboard-controls ctw-panel">
+    <mat-card-content class="dashboard-controls-content">
+      <div class="header-controls">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="header-select">
+          <mat-label>Top X</mat-label>
+          <mat-select [value]="store.topN()" (selectionChange)="onTopNChange($event.value)">
+            @for (option of topNOptions(); track option) {
+              <mat-option [value]="option">
+                {{ option === topNAllValue ? topNAllLabel : option }}
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <button mat-stroked-button type="button" (click)="openExplorer()">Open Explorer</button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  @if (store.status() === 'loading') {
+    <div class="ctw-card-state">
+      <app-loading-indicator [message]="'Loading dashboard...'" [size]="30"></app-loading-indicator>
+    </div>
+  } @else if (store.status() === 'error') {
+    <div class="ctw-card-state error" role="status" aria-live="polite">
+      {{ store.errorMessage() ?? 'Failed to load dashboard.' }}
+    </div>
+  } @else {
+    <section class="kpi-grid" aria-label="Dashboard KPIs">
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Malware (active)</div>
+        <div class="kpi-value danger">{{ formatInteger(kpis().malwareActive) }}</div>
+        <div class="kpi-meta">Unique PURLs in active revisions</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Affected tests</div>
+        <div class="kpi-value">{{ formatInteger(kpis().affectedTests) }}</div>
+        <div class="kpi-meta">Tests with malware components in snapshot</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Oldest package scan</div>
+        <div class="kpi-value">{{ formatRelative(kpis().oldestPackageScanAt) }}</div>
+        <div class="kpi-meta">Oldest malware scan timestamp across active revisions</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Last analysis</div>
+        <div class="kpi-value">{{ formatRelative(kpis().lastAnalysisAt) }}</div>
+        <div class="kpi-meta">Since last successful SBOM ingest</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Ingest volume</div>
+        <div class="kpi-value">{{ formatInteger(kpis().ingestImports) }}</div>
+        <div class="kpi-meta">{{ formatInteger(kpis().ingestComponents) }} imported components</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Overrides (active)</div>
+        <div class="kpi-value warning">{{ formatInteger(kpis().overridesActive) }}</div>
+        <div class="kpi-meta">Risk accepted findings not expired</div>
+      </mat-card>
+    </section>
+
+    <section class="top-grid">
+      <mat-card class="summary-card ctw-panel">
+        <div class="summary-header">
+          <h3>Top {{ topNLabel() }} products</h3>
+        </div>
+        <div class="summary-subtitle">Products with most malware (unique PURLs)</div>
+        @if (topProductsTotal() > 0) {
+          <div class="top-pie-layout">
+            <app-pie-chart
+              [slices]="topProductsPieSlices()"
+              [size]="110"
+              [innerCutout]="0.64"
+              [chartLabel]="'Top malware products chart'"
+              [valueLabel]="'Malware PURLs'"
+              [counterLabel]="'Shown'"
+              [totalItems]="data().topProductsTotal"
+              (sliceSelected)="onTopProductsSliceSelected($event)"
+            ></app-pie-chart>
+            <div class="legend">
+              @for (item of topProducts(); track item.name; let idx = $index) {
+                <div class="legend-item" [class.active]="selectedTopProductsSliceIndex() === idx">
+                  <div class="legend-label">
+                    <span class="swatch" [style.background]="topProductsPieSlices()[idx]?.color"></span>
+                    <span>{{ item.name }}</span>
+                  </div>
+                  <div class="legend-value">
+                    {{ formatInteger(item.value) }} · {{ topSharePercent(item.value, topProductsTotal()) }}
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <div class="empty-state">No malware product data in current range.</div>
+        }
+      </mat-card>
+
+      <mat-card class="summary-card ctw-panel">
+        <div class="summary-header">
+          <h3>Top {{ topNLabel() }} scopes</h3>
+        </div>
+        <div class="summary-subtitle">Scopes with most malware (unique PURLs)</div>
+        @if (topScopesTotal() > 0) {
+          <div class="top-pie-layout">
+            <app-pie-chart
+              [slices]="topScopesPieSlices()"
+              [size]="110"
+              [innerCutout]="0.64"
+              [chartLabel]="'Top malware scopes chart'"
+              [valueLabel]="'Malware PURLs'"
+              [counterLabel]="'Shown'"
+              [totalItems]="data().topScopesTotal"
+              (sliceSelected)="onTopScopesSliceSelected($event)"
+            ></app-pie-chart>
+            <div class="legend">
+              @for (item of topScopes(); track item.name; let idx = $index) {
+                <div class="legend-item" [class.active]="selectedTopScopesSliceIndex() === idx">
+                  <div class="legend-label">
+                    <span class="swatch" [style.background]="topScopesPieSlices()[idx]?.color"></span>
+                    <span>{{ item.name }}</span>
+                  </div>
+                  <div class="legend-value">
+                    {{ formatInteger(item.value) }} · {{ topSharePercent(item.value, topScopesTotal()) }}
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <div class="empty-state">No malware scope data in current range.</div>
+        }
+      </mat-card>
+
+      <mat-card class="summary-card ctw-panel">
+        <div class="summary-header">
+          <h3>Top {{ topNLabel() }} package types</h3>
+        </div>
+        <div class="summary-subtitle">Active snapshot inventory distribution</div>
+        @if (topPackageTypesTotal() > 0) {
+          <div class="top-pie-layout">
+            <app-pie-chart
+              [slices]="topPackageTypesPieSlices()"
+              [size]="110"
+              [innerCutout]="0.64"
+              [chartLabel]="'Top package types chart'"
+              [valueLabel]="'Components'"
+              [counterLabel]="'Shown'"
+              [totalItems]="data().topPackageTypesTotal"
+              (sliceSelected)="onTopPackageTypesSliceSelected($event)"
+            ></app-pie-chart>
+            <div class="legend">
+              @for (item of topPackageTypes(); track item.packageType; let idx = $index) {
+                <div class="legend-item" [class.active]="selectedTopPackageTypesSliceIndex() === idx">
+                  <div class="legend-label">
+                    <span class="swatch" [style.background]="topPackageTypesPieSlices()[idx]?.color"></span>
+                    <span class="mono">{{ item.packageType }}</span>
+                  </div>
+                  <div class="legend-value">
+                    {{ formatInteger(item.count) }} ·
+                    {{ topSharePercent(item.count, topPackageTypesTotal()) }}
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <div class="empty-state">No package inventory data for active revisions.</div>
+        }
+      </mat-card>
+
+      <mat-card class="summary-card ctw-panel">
+        <div class="summary-header">
+          <h3>Top {{ topNLabel() }} licenses used</h3>
+        </div>
+        <div class="summary-subtitle">Active snapshot license distribution</div>
+        @if (topLicensesTotal() > 0) {
+          <div class="top-pie-layout">
+            <app-pie-chart
+              [slices]="topLicensesPieSlices()"
+              [size]="110"
+              [innerCutout]="0.64"
+              [chartLabel]="'Top licenses chart'"
+              [valueLabel]="'Occurrences'"
+              [counterLabel]="'Shown'"
+              [totalItems]="data().topLicensesTotal"
+              (sliceSelected)="onTopLicensesSliceSelected($event)"
+            ></app-pie-chart>
+            <div class="legend">
+              @for (item of topLicenses(); track item.license; let idx = $index) {
+                <div class="legend-item" [class.active]="selectedTopLicensesSliceIndex() === idx">
+                  <div class="legend-label">
+                    <span class="swatch" [style.background]="topLicensesPieSlices()[idx]?.color"></span>
+                    <span class="mono">{{ item.license }}</span>
+                  </div>
+                  <div class="legend-value">
+                    {{ formatInteger(item.count) }} ·
+                    {{ topSharePercent(item.count, topLicensesTotal()) }}
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        } @else {
+          <div class="empty-state">No license data for active revisions.</div>
+        }
+      </mat-card>
+    </section>
+
+    <mat-card class="summary-card ctw-panel">
+      <div class="summary-header">
+        <h3>Verdict distribution (active snapshot)</h3>
+        <button mat-stroked-button type="button" (click)="openExplorer()">Drill-down</button>
+      </div>
+      <div class="summary-subtitle">
+        Clean vs Malware vs Unknown (pending analysis)
+      </div>
+      <div class="verdict-layout">
+        <app-pie-chart
+          [slices]="verdictPieSlices()"
+          [size]="110"
+          [innerCutout]="0.64"
+          [chartLabel]="'Verdict distribution chart'"
+          [valueLabel]="'Components'"
+          [counterLabel]="'Shown'"
+          [totalItems]="verdictPieSlices().length"
+          (sliceSelected)="onVerdictSliceSelected($event)"
+        ></app-pie-chart>
+        <div class="legend">
+          <div class="legend-item" [class.active]="selectedVerdictSliceIndex() === 0">
+            <div class="legend-label">
+              <span class="swatch danger"></span>
+              <span>Malware</span>
+            </div>
+            <div class="legend-value">{{ formatInteger(verdictDistribution().malware) }}</div>
+          </div>
+          <div class="legend-item" [class.active]="selectedVerdictSliceIndex() === 1">
+            <div class="legend-label">
+              <span class="swatch success"></span>
+              <span>Clean</span>
+            </div>
+            <div class="legend-value">{{ formatInteger(verdictDistribution().clean) }}</div>
+          </div>
+          <div class="legend-item" [class.active]="selectedVerdictSliceIndex() === 2">
+            <div class="legend-label">
+              <span class="swatch warning"></span>
+              <span>Unknown</span>
+            </div>
+            <div class="legend-value">{{ formatInteger(verdictDistribution().unknown) }}</div>
+          </div>
+          <div class="legend-total mono">Total: {{ formatInteger(verdictTotal()) }}</div>
+        </div>
+      </div>
+    </mat-card>
+
+    <section class="tables-grid">
+      <mat-card class="table-card data-card ctw-panel">
+        <mat-card-content>
+          <div class="table-header">
+            <div>
+              <h3>Top malware packages (Top {{ topNLabel() }})</h3>
+              <p>Active snapshot with drill-down to Explorer</p>
+            </div>
+          </div>
+
+          <ng-template #packageRow let-row let-columns="columns">
+            @for (column of columns; track column.key) {
+              <td [class]="column.className ?? ''">
+                @if (column.key === 'purl') {
+                  <span class="mono">{{ row.purl }}</span>
+                } @else if (column.key === 'occurrences') {
+                  <span class="badge badge-danger">{{ row.occurrences }}</span>
+                } @else {
+                  {{ formatRelative(row.lastSeenAt) }}
+                }
+              </td>
+            }
+          </ng-template>
+
+          <ng-template #packageActions let-row>
+            <button mat-stroked-button type="button" (click)="openExplorer()">Open</button>
+          </ng-template>
+
+          <app-data-table
+            [columns]="packageColumns"
+            [rows]="topMalwarePackages()"
+            [columnOrder]="packageColumnOrder()"
+            [availableColumns]="[]"
+            [tablePanelOpen]="false"
+            [showTablePanel]="false"
+            [showFilterToggle]="false"
+            [enableSorting]="false"
+            [exportEnabled]="false"
+            [paginationEnabled]="false"
+            [status]="'loaded'"
+            [showActionsColumn]="true"
+            [rowContentTemplate]="packageRow"
+            [actionsTemplate]="packageActions"
+            [emptyMessage]="'No malware packages in active revisions.'"
+          ></app-data-table>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="table-card data-card ctw-panel">
+        <mat-card-content>
+          <div class="table-header">
+          <div>
+            <h3>Recent ingest activity (Last {{ topNLabel() }})</h3>
+              <p>Import pipeline status for selected project</p>
+          </div>
+          </div>
+
+          <ng-template #ingestRow let-row let-columns="columns">
+            @for (column of columns; track column.key) {
+              <td>
+                @if (column.key === 'timestamp') {
+                  {{ formatRelative(row.timestamp) }}
+                } @else if (column.key === 'target') {
+                  {{ ingestTarget(row) }}
+                } @else if (column.key === 'summary') {
+                  <span class="mono">{{ ingestSummary(row) }}</span>
+                } @else {
+                  <span [class]="statusBadgeClass(row.status)">{{ normalizeStatus(row.status) }}</span>
+                }
+              </td>
+            }
+          </ng-template>
+
+          <ng-template #ingestActions let-row>
+            <button mat-stroked-button type="button" (click)="openIngestRow(row)">Open</button>
+          </ng-template>
+
+          <app-data-table
+            [columns]="ingestColumns"
+            [rows]="recentIngest()"
+            [columnOrder]="ingestColumnOrder()"
+            [availableColumns]="[]"
+            [tablePanelOpen]="false"
+            [showTablePanel]="false"
+            [showFilterToggle]="false"
+            [enableSorting]="false"
+            [exportEnabled]="false"
+            [paginationEnabled]="false"
+            [status]="'loaded'"
+            [showActionsColumn]="true"
+            [rowContentTemplate]="ingestRow"
+            [actionsTemplate]="ingestActions"
+            [emptyMessage]="'No ingest activity in this scope.'"
+          ></app-data-table>
+        </mat-card-content>
+      </mat-card>
+    </section>
+  }
+</section>

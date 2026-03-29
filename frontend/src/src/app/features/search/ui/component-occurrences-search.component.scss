@@ -1,0 +1,71 @@
+.search-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.search-card {
+  background: var(--ctw-surface);
+}
+
+.search-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.search-header p {
+  color: var(--ctw-muted);
+  margin: 6px 0 0;
+}
+
+.verdict {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 86px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.verdict--malware {
+  background: var(--ctw-danger-bg);
+  color: var(--ctw-danger-text);
+  border: 1px solid var(--ctw-danger-border);
+}
+
+.verdict--clean {
+  background: var(--ctw-success-bg);
+  color: var(--ctw-success-text);
+  border: 1px solid var(--ctw-success-border);
+}
+
+.verdict--unknown {
+  background: var(--ctw-surface-muted);
+  color: var(--ctw-muted);
+  border: 1px solid var(--ctw-border-subtle);
+}
+
+.open-btn {
+  text-transform: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.open-btn lucide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.open-btn lucide-icon ::ng-deep svg {
+  width: 18px;
+  height: 18px;
+}

@@ -1,0 +1,11 @@
+.git
+.DS_Store
+**/.DS_Store
+
+src/node_modules
+src/dist
+src/coverage
+src/.angular
+src/.dev-server-check.log
+
+docs

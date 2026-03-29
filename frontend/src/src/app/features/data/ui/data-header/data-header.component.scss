@@ -1,0 +1,137 @@
+.data-header {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  justify-items: center;
+  row-gap: 16px;
+  padding: 12px 16px;
+  background: var(--ctw-surface);
+}
+
+.data-header > * {
+  margin: 0;
+}
+
+.breadcrumb {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 0.85rem;
+  margin: 0;
+  width: 100%;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.section-tabs {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: 0;
+}
+
+.section-toggle {
+  padding: 0;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  gap: 0;
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.section-toggle .mat-button-toggle {
+  color: var(--ctw-muted);
+  font-weight: 600;
+  background: var(--ctw-surface);
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 1.1rem; /* Reduced from 1.25rem */
+}
+
+/* Force taller buttons with ::ng-deep to override Material internal styles */
+::ng-deep .section-toggle .mat-button-toggle .mat-button-toggle-label-content {
+  line-height: 48px !important; /* Reduced from 56px */
+  padding: 0 32px !important;    /* Reduced from 40px */
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 12px;
+}
+
+/* Remove default button padding that might interfere with centering */
+::ng-deep .section-toggle .mat-button-toggle .mat-button-toggle-button {
+  padding-left: 0 !important;
+}
+
+/* Hide any default Angular Material checkmarks or icons that might appear */
+::ng-deep .section-toggle .mat-button-toggle .mat-pseudo-checkbox,
+::ng-deep .section-toggle .mat-button-toggle svg, 
+::ng-deep .section-toggle .mat-button-toggle mat-icon {
+  display: none !important;
+}
+
+/* Add checkmark to selected state */
+::ng-deep .section-toggle .mat-button-toggle-checked .mat-button-toggle-label-content::before {
+  content: "";
+  display: block;
+  width: 24px;
+  height: 24px;
+  background-color: currentColor;
+  -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>') no-repeat center;
+  mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>') no-repeat center;
+}
+
+.section-toggle .mat-button-toggle + .mat-button-toggle {
+  border-left: 0;
+}
+
+.section-toggle .mat-button-toggle:first-child {
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.section-toggle .mat-button-toggle:last-child {
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.section-toggle .mat-button-toggle:active,
+.section-toggle .mat-button-toggle.mat-button-toggle-checked {
+  box-shadow: none;
+}
+
+.section-toggle .mat-button-toggle.mat-button-toggle-checked {
+  background: var(--ctw-primary-soft);
+  color: var(--ctw-accent);
+}
+
+.breadcrumb button {
+  background: transparent;
+  border: none;
+  color: var(--ctw-primary);
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.breadcrumb .separator {
+  color: var(--ctw-muted);
+}
+
+.breadcrumb .current {
+  color: var(--ctw-text);
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .data-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

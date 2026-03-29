@@ -1,0 +1,61 @@
+<h2 mat-dialog-title>Manage Members: {{ data.projectName }}</h2>
+
+<div mat-dialog-content>
+  @if (status() === 'loading') {
+    <div class="dialog-state">
+      <app-loading-indicator [message]="'Loading members...'" [size]="28"></app-loading-indicator>
+    </div>
+  } @else if (status() === 'error') {
+    <div class="dialog-state error">
+      {{ errorMessage() ?? 'Failed to load members.' }}
+    </div>
+  } @else {
+    <mat-form-field appearance="outline" class="members-field">
+      <mat-label>Project members</mat-label>
+      <mat-select
+        multiple
+        [value]="selectedUserIds()"
+        (selectionChange)="onSelectionChange($event.value)"
+      >
+        @for (user of users(); track user.id) {
+          <mat-option [value]="user.id">{{ userLabel(user) }} · {{ user.role }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    @if (selectedUserIds().length > 0) {
+      <div class="selected-members">
+        <h3>Project roles</h3>
+        @for (userId of selectedUserIds(); track userId) {
+          <div class="selected-member-row">
+            <div class="member-label">{{ memberSelectionLabel(userId) }}</div>
+            <mat-form-field appearance="outline" class="member-role-field">
+              <mat-label>Project role</mat-label>
+              <mat-select
+                [value]="getMemberRole(userId)"
+                (selectionChange)="setMemberRole(userId, $event.value)"
+              >
+                <mat-option value="ADMIN">ADMIN</mat-option>
+                <mat-option value="WRITER">WRITER</mat-option>
+                <mat-option value="READER">READER</mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+        }
+      </div>
+    }
+  }
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Cancel</button>
+  <button
+    mat-flat-button
+    color="primary"
+    type="button"
+    (click)="save()"
+    [disabled]="status() !== 'loaded'"
+  >
+    Save
+  </button>
+</div>

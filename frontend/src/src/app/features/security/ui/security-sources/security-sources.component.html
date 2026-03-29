@@ -1,0 +1,662 @@
+<section class="security-sources">
+  <div class="sources-shell ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="ctw-shell-copy">
+      <h2 class="ctw-shell-title">Sources</h2>
+      <p class="ctw-shell-subtitle">Global malware intelligence sources and sync operations.</p>
+    </div>
+    <div class="sources-actions">
+      @if (canAdmin()) {
+        <button
+          mat-stroked-button
+          type="button"
+          (click)="recomputeSummaries()"
+          [disabled]="summaryRecomputeLoadState() === 'loading'"
+        >
+          Recompute summaries
+        </button>
+      }
+      <button mat-stroked-button type="button" (click)="refreshSources()">
+        Refresh sources
+      </button>
+    </div>
+  </div>
+
+  <mat-card class="sources-card data-card data-card--flush ctw-panel">
+    <mat-card-content>
+      <div class="sources-header">
+        <div>
+          <h3>Source registry</h3>
+          <p>Current source definitions and sync controls.</p>
+        </div>
+      </div>
+
+      @if (sourcesLoadState() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading sources...'" [size]="32"></app-loading-indicator>
+        </div>
+      } @else if (sourcesLoadState() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">Failed to load sources.</div>
+      }
+
+      @if (!canAdmin()) {
+        <div class="status-callout warning" role="status" aria-live="polite">
+          Read-only mode. Only global Admin can update source configuration or start synchronization.
+        </div>
+      }
+
+      @if (sources().length > 0) {
+        <div class="sources-grid">
+          @for (source of sources(); track source.id) {
+            <mat-card
+              class="source-card ctw-panel"
+              (click)="selectSource(source.id)"
+              [class.selected]="selectedSourceId() === source.id"
+            >
+              <div class="source-header">
+                <div class="source-title">
+                  <h4>{{ source.name }}</h4>
+                  <span class="badge">{{ source.sourceType }}</span>
+                </div>
+                <mat-slide-toggle
+                  [checked]="source.isActive"
+                  [disabled]="!canAdmin()"
+                  (change)="toggleSource(source, $event.checked)"
+                  aria-label="Toggle source"
+                >
+                  {{ source.isActive ? 'Active' : 'Disabled' }}
+                </mat-slide-toggle>
+              </div>
+
+              <div class="source-meta">
+                <div class="meta-row">
+                  <span>Base URL</span>
+                  <span class="value">{{ source.baseUrl }}</span>
+                </div>
+                <div class="meta-row">
+                  <span>Results path</span>
+                  <span class="value">{{ source.scanner?.resultsPath ?? '-' }}</span>
+                </div>
+              </div>
+
+              <div class="source-actions">
+                @if (isOsvMirrorSource(source)) {
+                  <button mat-stroked-button type="button" [disabled]="!canAdmin()" (click)="triggerFullSyncForSource(source)">
+                    Sync full
+                  </button>
+                  <button mat-stroked-button type="button" [disabled]="!canAdmin()" (click)="triggerLatestSyncForSource(source)">
+                    Sync latest
+                  </button>
+                }
+                @if (canAdmin()) {
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    (click)="recomputeSourceResults(source)"
+                    [disabled]="sourceResultsRecomputeLoadState(source.id) === 'loading'"
+                  >
+                    Recompute source
+                  </button>
+                }
+              </div>
+
+              @if (lastSync()) {
+                <div class="sync-banner">
+                  <div>
+                    <strong>Last sync:</strong> {{ lastSync()?.mode }}
+                  </div>
+                  <div class="muted">Sync ID: {{ lastSync()?.syncId }}</div>
+                </div>
+              }
+
+              <div class="source-config">
+                <div class="config-header">
+                  <h5>Configuration</h5>
+                  @if (canAdmin() && !isEditing(source.id)) {
+                    <button mat-stroked-button type="button" (click)="startEdit(source)">Edit</button>
+                  }
+                </div>
+
+                @if (canAdmin() && isEditing(source.id)) {
+                  <div class="config-grid">
+                    <mat-form-field appearance="outline">
+                      <mat-label>Base URL</mat-label>
+                      <input
+                        matInput
+                        [value]="draftFor(source.id)?.baseUrl ?? ''"
+                        (input)="updateDraftField(source.id, 'baseUrl', $event)"
+                      />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>All ZIP URL</mat-label>
+                      <input
+                        matInput
+                        [value]="draftFor(source.id)?.allZipUrl ?? ''"
+                        (input)="updateDraftField(source.id, 'allZipUrl', $event)"
+                      />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Modified CSV URL</mat-label>
+                      <input
+                        matInput
+                        [value]="draftFor(source.id)?.modifiedCsvUrl ?? ''"
+                        (input)="updateDraftField(source.id, 'modifiedCsvUrl', $event)"
+                      />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Data path</mat-label>
+                      <input
+                        matInput
+                        [value]="draftFor(source.id)?.dataPath ?? ''"
+                        (input)="updateDraftField(source.id, 'dataPath', $event)"
+                      />
+                    </mat-form-field>
+                    <mat-form-field appearance="outline">
+                      <mat-label>Timeout</mat-label>
+                      <input
+                        matInput
+                        [value]="draftFor(source.id)?.timeout ?? ''"
+                        (input)="updateDraftField(source.id, 'timeout', $event)"
+                      />
+                    </mat-form-field>
+                  </div>
+                  <div class="config-actions">
+                    <button mat-stroked-button type="button" (click)="cancelEdit(source.id)">Cancel</button>
+                    <button mat-flat-button color="primary" type="button" (click)="saveDraft(source.id)">
+                      Save changes
+                    </button>
+                  </div>
+                } @else {
+                  <div class="config-grid">
+                    <div class="config-row">
+                      <span>All ZIP URL</span>
+                      <span class="value">{{ configValue(source, 'all_zip_url') }}</span>
+                    </div>
+                    <div class="config-row">
+                      <span>Modified CSV URL</span>
+                      <span class="value">{{ configValue(source, 'modified_csv_url') }}</span>
+                    </div>
+                    <div class="config-row">
+                      <span>Data path</span>
+                      <span class="value">{{ configValue(source, 'results_data_path') }}</span>
+                    </div>
+                    <div class="config-row">
+                      <span>Timeout</span>
+                      <span class="value">{{ configValue(source, 'timeout') }}</span>
+                    </div>
+                  </div>
+                }
+              </div>
+            </mat-card>
+          }
+        </div>
+      } @else if (sourcesLoadState() === 'loaded') {
+        <div class="empty-state">No sources configured.</div>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="findings-card data-card data-card--flush ctw-panel">
+    <mat-card-content>
+      <div class="findings-header">
+        <div>
+          <h3>Findings</h3>
+          <p>
+            @if (selectedSource()) {
+              OSV findings for {{ selectedSource()?.name }}.
+            } @else {
+              Select a source to see findings.
+            }
+          </p>
+        </div>
+        @if (selectedSource()) {
+          <div class="findings-actions">
+            <button mat-stroked-button type="button" (click)="refreshSelectedFindings()">
+              Refresh
+            </button>
+          </div>
+        }
+      </div>
+
+      @if (!selectedSource()) {
+        <div class="ctw-card-state">Pick a source above to load findings.</div>
+      } @else if (findingsStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading findings...'" [size]="28"></app-loading-indicator>
+        </div>
+      } @else if (findingsStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">Failed to load findings.</div>
+      } @else if (findingsStatus() === 'idle') {
+        <div class="ctw-card-state">
+          <button mat-stroked-button type="button" (click)="loadFindings(selectedSourceId()!)">
+            Load findings
+          </button>
+        </div>
+      } @else {
+        <ng-template #findingsToolbar>
+          <button
+            type="button"
+            class="filter-panel-toggle"
+            [class.active]="findingsFilterPanelOpen()"
+            (click)="toggleFilterPanel('findings')"
+            aria-label="Toggle extended filtering"
+          >
+            <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+            <span>Extended filtering</span>
+          </button>
+          <!-- Filter input removed as requested -->
+        </ng-template>
+
+        <ng-template #findingsPanel>
+          @if (findingsFilterPanelOpen()) {
+            <app-advanced-filter-panel
+              [fields]="findingsAdvancedFields()"
+              [idPrefix]="'findings'"
+              (modeChange)="setFilterModeFor('findings', $event.key, $event.mode)"
+              (valueChange)="setFilterValueFor('findings', $event.key, $event.value)"
+              (selectionChange)="setMultiFilterFor('findings', $event.key, $event.values)"
+              (clearFilters)="clearFiltersFor('findings')"
+            ></app-advanced-filter-panel>
+          }
+        </ng-template>
+
+        <ng-template #findingsRowContent let-row let-columns="columns">
+          @for (column of columns; track column.key) {
+            <td [class]="column.className ?? ''">
+              {{ findingsRowValueForTable(row, column.key) }}
+            </td>
+          }
+        </ng-template>
+
+        <ng-template #findingsExpandedTemplate let-row let-columns="columns">
+          <div class="expanded-content findings-details">
+            <app-data-table-expanded-details
+              [items]="findingsExpandedItems(row)"
+              [visibleColumns]="columns"
+              [visibleRow]="row"
+              [visibleValue]="findingsRowValueForTable"
+            ></app-data-table-expanded-details>
+            @if (findingsEvidence(row); as evidence) {
+              <app-copy-block [label]="'Evidence'" [value]="evidence"></app-copy-block>
+            }
+            <app-copy-block [label]="'Details JSON'" [value]="findingsDetailsJson(row)"></app-copy-block>
+          </div>
+        </ng-template>
+
+        <app-data-table
+          [toolbarTemplate]="findingsToolbar"
+          [panelTemplate]="findingsPanel"
+          [columns]="findingsVisibleColumns()"
+          [columnOrder]="findingsColumnOrder()"
+          [columnQuery]="findingsColumnQuery()"
+          [availableColumns]="findingsAvailableColumns()"
+          [tablePanelOpen]="findingsTablePanelOpen()"
+          [showFilterToggle]="true"
+          [tableClass]="'detail-table'"
+          [filterRowVisible]="findingsFilterRowVisible()"
+          [filterVisible]="findingsFilterVisible()"
+          [columnFilters]="findingsColumnFilters()"
+          [enableSorting]="true"
+          [expandable]="true"
+          [expandedRowIds]="findingsExpanded()"
+          [rowIdKey]="'id'"
+          [expandedDetails]="findingsExpandedDetailsForTable"
+          [rowContentTemplate]="findingsRowContent"
+          [expandedRowTemplate]="findingsExpandedTemplate"
+          [sortColumn]="findingsSortColumn()"
+          [sortDir]="findingsSortDir()"
+          [rows]="pagedFindings()"
+          [status]="findingsTableStatus()"
+          [loadingMessage]="'Loading findings...'"
+          [errorMessage]="'Failed to load findings.'"
+          [emptyMessage]="'No findings yet.'"
+          [pageSizeOptions]="findingsPageSizeOptions"
+          [pageSize]="findingsPageSize()"
+          [pageIndex]="findingsPageIndex()"
+          [totalPages]="findingsTotalPages()"
+          [trackByKey]="'id'"
+          (toggleTablePanel)="toggleTablePanel('findings')"
+          (dropColumn)="dropColumnFor('findings', $event)"
+          (removeColumn)="removeColumnFor('findings', $event)"
+          (addColumn)="addColumnFor('findings', $event)"
+          (setColumnQuery)="setColumnQueryFor('findings', $event)"
+          (toggleFilter)="toggleFilterFor('findings', $event)"
+          (setColumnFilter)="setColumnFilterFor('findings', $event)"
+          (toggleSort)="toggleSortFor('findings', $event)"
+          (rowToggle)="toggleFindingsRow($event)"
+          (setPageSize)="setPageSizeFor('findings', $event)"
+          (prevPage)="prevPageFor('findings')"
+          (nextPage)="nextPageFor('findings')"
+        ></app-data-table>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="sync-history-card data-card data-card--flush ctw-panel">
+    <mat-card-content>
+      <div class="sync-history-header">
+        <div>
+          <h3>Sync history</h3>
+          <p>
+            @if (selectedSource()) {
+              Recent sync activity for {{ selectedSource()?.name }}.
+            } @else {
+              Select a source to see sync history.
+            }
+          </p>
+        </div>
+        @if (selectedSource()) {
+          <div class="sync-history-actions">
+            <button mat-stroked-button type="button" (click)="refreshSyncHistory()">
+              Refresh
+            </button>
+          </div>
+        }
+      </div>
+
+      @if (!selectedSource()) {
+        <div class="ctw-card-state">Pick a source above to load sync history.</div>
+      } @else if (syncHistoryStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading sync history...'" [size]="28"></app-loading-indicator>
+        </div>
+      } @else if (syncHistoryStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">Failed to load sync history.</div>
+      } @else if (syncHistoryStatus() === 'idle') {
+        <div class="ctw-card-state">
+          <button mat-stroked-button type="button" (click)="loadSyncHistory(selectedSourceId()!)">
+            Load sync history
+          </button>
+        </div>
+      } @else {
+      <ng-template #syncHistoryToolbar>
+        <button
+          type="button"
+          class="filter-panel-toggle"
+          [class.active]="syncHistoryFilterPanelOpen()"
+          (click)="toggleFilterPanel('syncHistory')"
+          aria-label="Toggle extended filtering"
+        >
+          <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+          <span>Extended filtering</span>
+        </button>
+        <!-- Filter input removed as requested -->
+      </ng-template>
+
+      <ng-template #syncHistoryPanel>
+        @if (syncHistoryFilterPanelOpen()) {
+          <app-advanced-filter-panel
+            [fields]="syncHistoryAdvancedFields()"
+            [idPrefix]="'sync-history'"
+            (modeChange)="setFilterModeFor('syncHistory', $event.key, $event.mode)"
+            (valueChange)="setFilterValueFor('syncHistory', $event.key, $event.value)"
+            (selectionChange)="setMultiFilterFor('syncHistory', $event.key, $event.values)"
+            (clearFilters)="clearFiltersFor('syncHistory')"
+          ></app-advanced-filter-panel>
+        }
+      </ng-template>
+
+      <ng-template #syncHistoryRowContent let-row let-columns="columns">
+        @for (column of columns; track column.key) {
+          <td [class]="column.className ?? ''">
+            @if (column.key === 'status') {
+              <span [class]="'status-pill ' + syncHistoryStatusClass(row)">
+                {{ row.status }}
+              </span>
+            } @else if (column.key === 'errors') {
+              <div class="sync-errors-cell">
+                <span class="mono">{{ syncHistoryRowValueForTable(row, column.key) }}</span>
+                @if (syncHistoryHasErrors(row)) {
+                  <button
+                    mat-stroked-button
+                    type="button"
+                    class="sync-errors-button"
+                    (click)="openSyncErrors(row, $event)"
+                  >
+                    Show errors
+                  </button>
+                }
+              </div>
+            } @else {
+              {{ syncHistoryRowValueForTable(row, column.key) }}
+            }
+          </td>
+        }
+      </ng-template>
+
+      <ng-template #syncHistoryExpandedTemplate let-row let-columns="columns">
+        <div class="expanded-content sync-history-details">
+          <app-data-table-expanded-details
+            [items]="[]"
+            [visibleColumns]="columns"
+            [visibleRow]="row"
+            [visibleValue]="syncHistoryRowValueForTable"
+          ></app-data-table-expanded-details>
+          @for (entry of syncHistoryEntryDetails(row.id); track entry.id) {
+            <div class="sync-history-entry">
+              <div class="sync-history-entry-header">
+                <strong>{{ syncHistoryActionLabel(entry.action) }}</strong>
+                <span class="muted">{{ entry.createdAt }}</span>
+              </div>
+              @if (entry.details.length > 0) {
+                <app-data-table-expanded-details [items]="syncHistoryExpandedItems(entry)"></app-data-table-expanded-details>
+              } @else {
+                <div class="muted">No extra details.</div>
+              }
+            </div>
+          }
+        </div>
+      </ng-template>
+
+      <app-data-table
+        [toolbarTemplate]="syncHistoryToolbar"
+        [panelTemplate]="syncHistoryPanel"
+        [columns]="syncHistoryVisibleColumns()"
+        [columnOrder]="syncHistoryColumnOrder()"
+        [columnQuery]="syncHistoryColumnQuery()"
+        [availableColumns]="syncHistoryAvailableColumns()"
+        [tablePanelOpen]="syncHistoryTablePanelOpen()"
+        [showFilterToggle]="true"
+        [tableClass]="'detail-table'"
+        [filterRowVisible]="syncHistoryFilterRowVisible()"
+        [filterVisible]="syncHistoryFilterVisible()"
+        [columnFilters]="syncHistoryColumnFilters()"
+        [enableSorting]="true"
+        [expandable]="true"
+        [expandedRowIds]="syncHistoryExpanded()"
+        [rowIdKey]="'id'"
+        [rowContentTemplate]="syncHistoryRowContent"
+        [expandedRowTemplate]="syncHistoryExpandedTemplate"
+        [sortColumn]="syncHistorySortColumn()"
+        [sortDir]="syncHistorySortDir()"
+        [rows]="pagedSyncHistory()"
+        [exportRows]="sortedSyncHistory()"
+        [exportFilenameBase]="'sync_history'"
+        [status]="syncHistoryTableStatus()"
+        [loadingMessage]="'Loading sync history...'"
+        [errorMessage]="'Failed to load sync history.'"
+        [emptyMessage]="'No sync activity yet.'"
+        [pageSizeOptions]="syncHistoryPageSizeOptions"
+        [pageSize]="syncHistoryPageSize()"
+        [pageIndex]="syncHistoryPageIndex()"
+        [totalPages]="syncHistoryTotalPages()"
+        [trackByKey]="'id'"
+        (toggleTablePanel)="toggleTablePanel('syncHistory')"
+        (dropColumn)="dropColumnFor('syncHistory', $event)"
+        (removeColumn)="removeColumnFor('syncHistory', $event)"
+        (addColumn)="addColumnFor('syncHistory', $event)"
+        (setColumnQuery)="setColumnQueryFor('syncHistory', $event)"
+        (toggleFilter)="toggleFilterFor('syncHistory', $event)"
+        (setColumnFilter)="setColumnFilterFor('syncHistory', $event)"
+        (toggleSort)="toggleSortFor('syncHistory', $event)"
+        (rowToggle)="toggleSyncHistoryRow($event)"
+        (setPageSize)="setPageSizeFor('syncHistory', $event)"
+        (prevPage)="prevPageFor('syncHistory')"
+        (nextPage)="nextPageFor('syncHistory')"
+      ></app-data-table>
+    }
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="recompute-history-card data-card data-card--flush ctw-panel">
+    <mat-card-content>
+      <div class="recompute-history-header">
+        <div>
+          <h3>Recompute history</h3>
+          <p>
+            @if (recomputeHistoryMode() === 'summaries') {
+              Manual summary recomputation runs.
+            } @else if (selectedSource()) {
+              Results recomputation runs for {{ selectedSource()?.name }}.
+            } @else {
+              Select a source to see results recomputation history.
+            }
+          </p>
+        </div>
+        <div class="recompute-history-actions">
+          <mat-button-toggle-group
+            [value]="recomputeHistoryMode()"
+            (change)="setRecomputeHistoryMode($event.value)"
+            aria-label="Select recompute history mode"
+          >
+            <mat-button-toggle value="source">Source results</mat-button-toggle>
+            <mat-button-toggle value="summaries">Summaries</mat-button-toggle>
+          </mat-button-toggle-group>
+
+          @if (recomputeHistoryMode() === 'summaries' || selectedSource()) {
+            <button mat-stroked-button type="button" (click)="refreshRecomputeHistory()">
+              Refresh
+            </button>
+          }
+        </div>
+      </div>
+
+      @if (recomputeHistoryMode() !== 'summaries' && !selectedSource()) {
+        <div class="ctw-card-state">Pick a source above to load recompute history.</div>
+      } @else if (recomputeHistoryStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading recompute history...'" [size]="28"></app-loading-indicator>
+        </div>
+      } @else if (recomputeHistoryStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">Failed to load recompute history.</div>
+      } @else if (recomputeHistoryStatus() === 'idle') {
+        <div class="ctw-card-state">
+          <button mat-stroked-button type="button" (click)="loadRecomputeHistory()">
+            Load recompute history
+          </button>
+        </div>
+      } @else {
+      <ng-template #recomputeHistoryToolbar>
+        <button
+          type="button"
+          class="filter-panel-toggle"
+          [class.active]="recomputeHistoryFilterPanelOpen()"
+          (click)="toggleFilterPanel('recomputeHistory')"
+          aria-label="Toggle extended filtering"
+        >
+          <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+          <span>Extended filtering</span>
+        </button>
+      </ng-template>
+
+      <ng-template #recomputeHistoryPanel>
+        @if (recomputeHistoryFilterPanelOpen()) {
+          <app-advanced-filter-panel
+            [fields]="recomputeHistoryAdvancedFields()"
+            [idPrefix]="'recompute-history'"
+            (modeChange)="setFilterModeFor('recomputeHistory', $event.key, $event.mode)"
+            (valueChange)="setFilterValueFor('recomputeHistory', $event.key, $event.value)"
+            (selectionChange)="setMultiFilterFor('recomputeHistory', $event.key, $event.values)"
+            (clearFilters)="clearFiltersFor('recomputeHistory')"
+          ></app-advanced-filter-panel>
+        }
+      </ng-template>
+
+      <ng-template #recomputeHistoryRowContent let-row let-columns="columns">
+        @for (column of columns; track column.key) {
+          <td [class]="column.className ?? ''">
+            @if (column.key === 'status') {
+              <span [class]="'status-pill ' + recomputeHistoryStatusClass(row)">
+                {{ row.status }}
+              </span>
+            } @else {
+              {{ recomputeHistoryRowValueForTable(row, column.key) }}
+            }
+          </td>
+        }
+      </ng-template>
+
+      <ng-template #recomputeHistoryExpandedTemplate let-row let-columns="columns">
+        <div class="expanded-content recompute-history-details">
+          <app-data-table-expanded-details
+            [items]="[]"
+            [visibleColumns]="columns"
+            [visibleRow]="row"
+            [visibleValue]="recomputeHistoryRowValueForTable"
+          ></app-data-table-expanded-details>
+          @for (entry of recomputeHistoryEntryDetails(row.id); track entry.id) {
+            <div class="sync-history-entry">
+              <div class="sync-history-entry-header">
+                <strong>{{ recomputeHistoryActionLabel(entry.action) }}</strong>
+                <span class="muted">{{ entry.createdAt }}</span>
+              </div>
+              @if (entry.details.length > 0) {
+                <app-data-table-expanded-details [items]="recomputeHistoryExpandedItems(entry)"></app-data-table-expanded-details>
+              } @else {
+                <div class="muted">No extra details.</div>
+              }
+            </div>
+          }
+        </div>
+      </ng-template>
+
+
+      <app-data-table
+        [toolbarTemplate]="recomputeHistoryToolbar"
+        [panelTemplate]="recomputeHistoryPanel"
+        [columns]="recomputeHistoryVisibleColumns()"
+        [columnOrder]="recomputeHistoryColumnOrder()"
+        [columnQuery]="recomputeHistoryColumnQuery()"
+        [availableColumns]="recomputeHistoryAvailableColumns()"
+        [tablePanelOpen]="recomputeHistoryTablePanelOpen()"
+        [showFilterToggle]="true"
+        [tableClass]="'detail-table'"
+        [filterRowVisible]="recomputeHistoryFilterRowVisible()"
+        [filterVisible]="recomputeHistoryFilterVisible()"
+        [columnFilters]="recomputeHistoryColumnFilters()"
+        [enableSorting]="true"
+        [expandable]="true"
+        [expandedRowIds]="recomputeHistoryExpanded()"
+        [rowIdKey]="'id'"
+        [rowContentTemplate]="recomputeHistoryRowContent"
+        [expandedRowTemplate]="recomputeHistoryExpandedTemplate"
+        [sortColumn]="recomputeHistorySortColumn()"
+        [sortDir]="recomputeHistorySortDir()"
+        [rows]="pagedRecomputeHistory()"
+        [exportRows]="sortedRecomputeHistory()"
+        [exportFilenameBase]="'recompute_history'"
+        [status]="recomputeHistoryTableStatus()"
+        [loadingMessage]="'Loading recompute history...'"
+        [errorMessage]="'Failed to load recompute history.'"
+        [emptyMessage]="'No recompute activity yet.'"
+        [pageSizeOptions]="recomputeHistoryPageSizeOptions"
+        [pageSize]="recomputeHistoryPageSize()"
+        [pageIndex]="recomputeHistoryPageIndex()"
+        [totalPages]="recomputeHistoryTotalPages()"
+        [trackByKey]="'id'"
+        (toggleTablePanel)="toggleTablePanel('recomputeHistory')"
+        (dropColumn)="dropColumnFor('recomputeHistory', $event)"
+        (removeColumn)="removeColumnFor('recomputeHistory', $event)"
+        (addColumn)="addColumnFor('recomputeHistory', $event)"
+        (setColumnQuery)="setColumnQueryFor('recomputeHistory', $event)"
+        (toggleFilter)="toggleFilterFor('recomputeHistory', $event)"
+        (setColumnFilter)="setColumnFilterFor('recomputeHistory', $event)"
+        (toggleSort)="toggleSortFor('recomputeHistory', $event)"
+        (rowToggle)="toggleRecomputeHistoryRow($event)"
+        (setPageSize)="setPageSizeFor('recomputeHistory', $event)"
+        (prevPage)="prevPageFor('recomputeHistory')"
+        (nextPage)="nextPageFor('recomputeHistory')"
+      ></app-data-table>
+    }
+    </mat-card-content>
+  </mat-card>
+</section>

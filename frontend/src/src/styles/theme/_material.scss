@@ -1,0 +1,41 @@
+@use '@angular/material' as mat;
+
+$ctwall-light-theme: mat.define-theme((
+  color: (
+    theme-type: light,
+    primary: mat.$azure-palette,
+    tertiary: mat.$cyan-palette
+  ),
+  typography: (
+    brand-family: 'IBM Plex Sans',
+    plain-family: 'IBM Plex Sans'
+  ),
+  density: (
+    scale: 0
+  )
+));
+
+$ctwall-dark-theme: mat.define-theme((
+  color: (
+    theme-type: dark,
+    primary: mat.$azure-palette,
+    tertiary: mat.$cyan-palette
+  ),
+  typography: (
+    brand-family: 'IBM Plex Sans',
+    plain-family: 'IBM Plex Sans'
+  ),
+  density: (
+    scale: 0
+  )
+));
+
+@mixin apply-themes() {
+  .ctw-theme-light {
+    @include mat.all-component-themes($ctwall-light-theme);
+  }
+
+  .ctw-theme-dark {
+    @include mat.all-component-themes($ctwall-dark-theme);
+  }
+}

@@ -1,0 +1,323 @@
+<section class="settings-view">
+  <div class="settings-shell ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="ctw-shell-copy">
+      <h2 class="ctw-shell-title">{{ shellTitle() }}</h2>
+      <p class="ctw-shell-subtitle">{{ shellSubtitle() }}</p>
+    </div>
+    <button mat-stroked-button type="button" (click)="refreshCurrent()" aria-label="Refresh settings section">
+      <lucide-icon [img]="RefreshCw" aria-hidden="true"></lucide-icon>
+      <span>Refresh</span>
+    </button>
+  </div>
+
+  @if (activeSection() === 'general') {
+    <mat-card class="settings-card data-card ctw-panel">
+      <mat-card-content>
+        <div class="card-header">
+          <div>
+            <h4>General</h4>
+            <p>Read-only effective configuration loaded by backend runtime.</p>
+          </div>
+          <div class="header-actions">
+            <button mat-stroked-button type="button" (click)="openManageProjects()">
+              <lucide-icon [img]="FolderCog" aria-hidden="true"></lucide-icon>
+              <span>Manage projects</span>
+            </button>
+            <button mat-stroked-button type="button" (click)="openEvents()">Open events</button>
+          </div>
+        </div>
+
+        @if (generalStatus() === 'loading') {
+          <div class="ctw-card-state">
+            <app-loading-indicator [message]="'Loading general settings...'" [size]="28"></app-loading-indicator>
+          </div>
+        } @else if (generalStatus() === 'error') {
+          <div class="ctw-card-state error" role="status" aria-live="polite">
+            {{ generalError() ?? 'Failed to load general settings.' }}
+          </div>
+        } @else {
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Read-only</span>
+              <strong>{{ generalSection.readOnlyLabel() }}</strong>
+            </div>
+            <div class="meta-item mono">
+              <span class="meta-label">Config path</span>
+              <strong>{{ generalSection.configPath() }}</strong>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Generated at</span>
+              <strong>{{ generalSection.generatedAt() ? (generalSection.generatedAt() | date: 'medium') : '-' }}</strong>
+            </div>
+          </div>
+
+          <app-copy-block [label]="'Effective config JSON'" [value]="generalSection.configJson()"></app-copy-block>
+        }
+      </mat-card-content>
+    </mat-card>
+  }
+
+  @if (activeSection() === 'connectors') {
+    <mat-card class="settings-card data-card ctw-panel">
+      <mat-card-content>
+        <div class="card-header">
+          <div>
+            <h4>Connectors</h4>
+            <p>Global connector profiles used for alerting integrations (MVP stage).</p>
+          </div>
+        </div>
+
+        <ng-template #connectorRowContent let-row let-columns="columns">
+          @for (column of columns; track column.key) {
+            <td>
+              @if (column.key === 'lastTestStatus') {
+                <span [class]="testStatusClass(row.lastTestStatus)">{{ connectorsTable.value(row, column.key) }}</span>
+              } @else {
+                {{ connectorsTable.value(row, column.key) }}
+              }
+            </td>
+          }
+        </ng-template>
+
+        <ng-template #connectorActions let-row>
+          <div class="row-actions">
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="openConnectorConfig(row)"
+              [disabled]="connectorActionInProgress() === row.type"
+            >
+              Configure
+            </button>
+            <button
+              mat-stroked-button
+              type="button"
+              (click)="runConnectorTest(row)"
+              [disabled]="connectorActionInProgress() === row.type"
+            >
+              {{ connectorTestButtonLabel(row) }}
+            </button>
+          </div>
+        </ng-template>
+
+        <ng-template #connectorToolbar>
+          <button
+            type="button"
+            class="filter-panel-toggle"
+            [class.active]="connectorsTable.filterPanelOpen()"
+            (click)="connectorsTable.toggleExtendedFilters()"
+            aria-label="Toggle extended filtering"
+          >
+            <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+            <span>Extended filtering</span>
+          </button>
+        </ng-template>
+
+        <ng-template #connectorPanel>
+          @if (connectorsTable.filterPanelOpen()) {
+            <app-advanced-filter-panel
+              [fields]="connectorsTable.advancedFields()"
+              [idPrefix]="'settings-connector'"
+              (modeChange)="connectorsTable.setFilterMode($event.key, $event.mode)"
+              (valueChange)="connectorsTable.setFilterValue($event.key, $event.value)"
+              (selectionChange)="connectorsTable.setMultiFilter($event.key, $event.values)"
+              (clearFilters)="connectorsTable.clearFilters()"
+            ></app-advanced-filter-panel>
+          }
+        </ng-template>
+
+        @if (connectorsStatus() === 'loading') {
+          <div class="ctw-card-state">
+            <app-loading-indicator [message]="'Loading connectors...'" [size]="28"></app-loading-indicator>
+          </div>
+        } @else if (connectorsStatus() === 'error') {
+          <div class="ctw-card-state error" role="status" aria-live="polite">
+            {{ connectorsError() ?? 'Failed to load connectors.' }}
+          </div>
+        } @else {
+          <app-data-table
+            [columns]="connectorsTable.columns"
+            [rows]="connectorsTable.rows()"
+            [columnOrder]="connectorsTable.columnOrder()"
+            [availableColumns]="connectorsTable.availableColumns()"
+            [tablePanelOpen]="connectorsTable.tablePanelOpen()"
+            [lockedColumns]="connectorsTable.lockedColumns"
+            [filterRowVisible]="connectorsTable.filterRowVisible()"
+            [filterVisible]="connectorsTable.filterVisible()"
+            [columnFilters]="connectorsTable.columnFilters()"
+            [sortColumn]="connectorsTable.sortColumn()"
+            [sortDir]="connectorsTable.sortDir()"
+            [rowContentTemplate]="connectorRowContent"
+            [toolbarTemplate]="connectorToolbar"
+            [panelTemplate]="connectorPanel"
+            [actionsTemplate]="connectorActions"
+            [showActionsColumn]="true"
+            [status]="'loaded'"
+            [emptyMessage]="'No connectors found.'"
+            [enableSorting]="true"
+            [showFilterToggle]="true"
+            [showTablePanel]="true"
+            [paginationEnabled]="false"
+            (toggleTablePanel)="connectorsTable.toggleTablePanel()"
+            (dropColumn)="connectorsTable.dropColumn($event)"
+            (removeColumn)="connectorsTable.removeColumn($event)"
+            (addColumn)="connectorsTable.addColumn($event)"
+            (toggleFilter)="connectorsTable.toggleFilter($event.key, $event.event)"
+            (setColumnFilter)="connectorsTable.setColumnFilter($event.key, $event.event)"
+            (toggleSort)="connectorsTable.toggleSort($event)"
+          ></app-data-table>
+        }
+      </mat-card-content>
+    </mat-card>
+  }
+
+  @if (activeSection() === 'users') {
+    <mat-card class="settings-card data-card ctw-panel">
+      <mat-card-content>
+        <div class="card-header">
+          <div>
+            <h4>Users</h4>
+            <p>Admin user management for platform access and account roles.</p>
+          </div>
+          <button mat-flat-button color="primary" type="button" class="add-user-btn" (click)="createUser()">
+            <span class="btn-inline">
+              <lucide-icon [img]="CirclePlus" aria-hidden="true"></lucide-icon>
+              <span>Add user</span>
+            </span>
+          </button>
+        </div>
+
+        <ng-template #userRowContent let-row let-columns="columns">
+          @for (column of columns; track column.key) {
+            <td [class]="column.key === 'id' ? 'mono' : ''">{{ usersTable.value(row, column.key) }}</td>
+          }
+        </ng-template>
+
+        <ng-template #userActions let-row>
+          <div class="row-actions">
+            <button
+              mat-icon-button
+              type="button"
+              (click)="editUser(row)"
+              [disabled]="!!userActionInProgress()"
+              class="row-action-icon"
+              aria-label="Edit user"
+              matTooltip="Edit user"
+              matTooltipPosition="above"
+            >
+              <lucide-icon [img]="Pencil" aria-hidden="true"></lucide-icon>
+            </button>
+            @if (!usersTable.isServiceAccount(row)) {
+              <button
+                mat-icon-button
+                type="button"
+                (click)="resetUserPassword(row)"
+                [disabled]="!!userActionInProgress()"
+                class="row-action-icon"
+                aria-label="Reset password"
+                matTooltip="Reset password"
+                matTooltipPosition="above"
+              >
+                <lucide-icon [img]="RefreshCw" aria-hidden="true"></lucide-icon>
+              </button>
+            }
+            @if (usersTable.isServiceAccount(row)) {
+              <button
+                mat-icon-button
+                type="button"
+                (click)="createServiceAccountToken(row)"
+                [disabled]="!!userActionInProgress()"
+                class="row-action-icon"
+                aria-label="Generate token"
+                matTooltip="Generate token"
+                matTooltipPosition="above"
+              >
+                <lucide-icon [img]="Key" aria-hidden="true"></lucide-icon>
+              </button>
+            }
+            <button
+              mat-icon-button
+              type="button"
+              class="row-action-icon danger"
+              (click)="deleteUser(row)"
+              [disabled]="!!userActionInProgress()"
+              aria-label="Delete user"
+              matTooltip="Delete user"
+              matTooltipPosition="above"
+            >
+              <lucide-icon [img]="Trash2" aria-hidden="true"></lucide-icon>
+            </button>
+          </div>
+        </ng-template>
+
+        <ng-template #userToolbar>
+          <button
+            type="button"
+            class="filter-panel-toggle"
+            [class.active]="usersTable.filterPanelOpen()"
+            (click)="usersTable.toggleExtendedFilters()"
+            aria-label="Toggle extended filtering"
+          >
+            <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+            <span>Extended filtering</span>
+          </button>
+        </ng-template>
+
+        <ng-template #userPanel>
+          @if (usersTable.filterPanelOpen()) {
+            <app-advanced-filter-panel
+              [fields]="usersTable.advancedFields()"
+              [idPrefix]="'settings-user'"
+              (modeChange)="usersTable.setFilterMode($event.key, $event.mode)"
+              (valueChange)="usersTable.setFilterValue($event.key, $event.value)"
+              (selectionChange)="usersTable.setMultiFilter($event.key, $event.values)"
+              (clearFilters)="usersTable.clearFilters()"
+            ></app-advanced-filter-panel>
+          }
+        </ng-template>
+
+        @if (usersStatus() === 'loading') {
+          <div class="ctw-card-state">
+            <app-loading-indicator [message]="'Loading users...'" [size]="28"></app-loading-indicator>
+          </div>
+        } @else if (usersStatus() === 'error') {
+          <div class="ctw-card-state error" role="status" aria-live="polite">
+            {{ usersError() ?? 'Failed to load users.' }}
+          </div>
+        } @else {
+          <app-data-table
+            [columns]="usersTable.columns"
+            [rows]="usersTable.rows()"
+            [columnOrder]="usersTable.columnOrder()"
+            [availableColumns]="usersTable.availableColumns()"
+            [tablePanelOpen]="usersTable.tablePanelOpen()"
+            [lockedColumns]="usersTable.lockedColumns"
+            [filterRowVisible]="usersTable.filterRowVisible()"
+            [filterVisible]="usersTable.filterVisible()"
+            [columnFilters]="usersTable.columnFilters()"
+            [sortColumn]="usersTable.sortColumn()"
+            [sortDir]="usersTable.sortDir()"
+            [rowContentTemplate]="userRowContent"
+            [toolbarTemplate]="userToolbar"
+            [panelTemplate]="userPanel"
+            [actionsTemplate]="userActions"
+            [showActionsColumn]="true"
+            [status]="'loaded'"
+            [emptyMessage]="'No users found.'"
+            [enableSorting]="true"
+            [showFilterToggle]="true"
+            [showTablePanel]="true"
+            [paginationEnabled]="false"
+            (toggleTablePanel)="usersTable.toggleTablePanel()"
+            (dropColumn)="usersTable.dropColumn($event)"
+            (removeColumn)="usersTable.removeColumn($event)"
+            (addColumn)="usersTable.addColumn($event)"
+            (toggleFilter)="usersTable.toggleFilter($event.key, $event.event)"
+            (setColumnFilter)="usersTable.setColumnFilter($event.key, $event.event)"
+            (toggleSort)="usersTable.toggleSort($event)"
+          ></app-data-table>
+        }
+      </mat-card-content>
+    </mat-card>
+  }
+</section>

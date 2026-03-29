@@ -1,0 +1,4499 @@
+openapi: 3.1.0
+info:
+  title: CTWall Backend API
+  version: 1.0.0
+  description: |
+    API for ChainThreatWall (CTWall) - SBOM Management and Security Analysis System.
+    Adheres to OWASP ASVS Level 2 Security Requirements.
+    Uses RFC 7807 for error handling.
+
+servers:
+  - url: https://api.ctwall.internal/api/v1
+    description: Production Server
+  - url: http://localhost:8080/api/v1
+    description: Local Development
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        API token for user/service accounts/CLI.
+        Use: `Authorization: Bearer <API_TOKEN>`.
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Host-CTWALL_SESSION
+      description: |
+        Session JWT stored in HttpOnly cookie for GUI users.
+    RefreshCookieAuth:
+      type: apiKey
+      in: cookie
+      name: __Secure-CTWALL_REFRESH
+      description: |
+        Refresh token stored in HttpOnly cookie for GUI session renewal.
+
+  schemas:
+    # --- RFC 7807 Error ---
+    Error:
+      type: object
+      description: RFC 7807 Problem Details
+      properties:
+        type:
+          type: string
+          maxLength: 120
+          format: uri
+          example: "about:blank"
+        title:
+          type: string
+          maxLength: 120
+          example: "Invalid Request"
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          maxLength: 120
+          example: "Field 'sbom_file' is missing."
+        instance:
+          type: string
+          maxLength: 120
+          example: "/api/v1/ingest"
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          maxLength: 120
+          format: email
+        password:
+          type: string
+          maxLength: 120
+          format: password
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          maxLength: 120
+          format: password
+        newPassword:
+          type: string
+          minLength: 12
+          maxLength: 120
+          format: password
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        email:
+          type: string
+          maxLength: 120
+          format: email
+        role:
+          type: string
+          maxLength: 120
+          enum: [ADMIN, WRITER, READER, NONE]
+        accountType:
+          type: string
+          maxLength: 120
+          enum: [USER, SERVICE_ACCOUNT]
+        fullName:
+          type: string
+          maxLength: 120
+
+    CreateUserRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          maxLength: 120
+          format: email
+        password:
+          type: string
+          minLength: 12
+          maxLength: 120
+          format: password
+        role:
+          type: string
+          maxLength: 120
+          enum: [ADMIN, WRITER, READER, NONE]
+        accountType:
+          type: string
+          maxLength: 120
+          enum: [USER, SERVICE_ACCOUNT]
+          default: USER
+        fullName:
+          type: string
+          maxLength: 120
+
+    UpdateUserRequest:
+      type: object
+      required: [role, accountType]
+      properties:
+        role:
+          type: string
+          maxLength: 120
+          enum: [ADMIN, WRITER, READER, NONE]
+        accountType:
+          type: string
+          maxLength: 120
+          enum: [USER, SERVICE_ACCOUNT]
+        fullName:
+          type: string
+          maxLength: 120
+
+    ResetUserPasswordRequest:
+      type: object
+      required: [newPassword]
+      properties:
+        newPassword:
+          type: string
+          minLength: 12
+          maxLength: 120
+          format: password
+
+    CreateUserTokenRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        expiresAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    CreateUserTokenResponse:
+      type: object
+      properties:
+        tokenId:
+          type: string
+          maxLength: 120
+          format: uuid
+        token:
+          type: string
+          maxLength: 120
+        name:
+          type: string
+          maxLength: 120
+        expiresAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    # --- Domain Entities ---
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 120
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        archivedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    Scope:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        productId:
+          type: string
+          maxLength: 120
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        description:
+          type: string
+          maxLength: 120
+        archivedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    SbomType:
+      type: object
+      required: [standard, specVersion]
+      properties:
+        standard:
+          type: string
+          maxLength: 120
+          enum: [cyclonedx, spdx, swid]
+        specVersion:
+          type: string
+          maxLength: 120
+          pattern: '^(unknown|\\d+(\\.\\d+){0,2})$'
+          default: unknown
+
+    Test:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        scopeId:
+          type: string
+          maxLength: 120
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        sbomType:
+          $ref: "#/components/schemas/SbomType"
+        isPublic:
+          type: boolean
+        publicToken:
+          type: string
+          maxLength: 120
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        archivedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    TestRevision:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        sbomSha256:
+          type: string
+          maxLength: 120
+        sbomProducer:
+          type: string
+          maxLength: 120
+          enum: [trivy, syft, grype, other]
+        tags:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            maxLength: 64
+        metadataJson:
+          type: object
+        sbomMetadataJson:
+          type: object
+        componentsImportedCount:
+          type: integer
+        isActive:
+          type: boolean
+        lastModifiedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    DepAlertRevisionVerdict:
+      type: object
+      required:
+        - projectId
+        - testId
+        - revisionId
+        - verdict
+        - totalComponents
+        - malwareComponents
+        - cleanComponents
+        - unknownComponents
+        - computedAt
+      properties:
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        verdict:
+          type: string
+          maxLength: 120
+          enum: [MALWARE, CLEAN, UNKNOWN]
+        totalComponents:
+          type: integer
+          minimum: 0
+        malwareComponents:
+          type: integer
+          minimum: 0
+        cleanComponents:
+          type: integer
+          minimum: 0
+        unknownComponents:
+          type: integer
+          minimum: 0
+        computedAt:
+          type: string
+          format: date-time
+
+    Component:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        purl:
+          type: string
+          maxLength: 2048
+        pkgName:
+          type: string
+          maxLength: 120
+        version:
+          type: string
+          maxLength: 120
+        pkgType:
+          type: string
+          maxLength: 120
+        pkgNamespace:
+          type: string
+          maxLength: 120
+        sbomType:
+          type: string
+          maxLength: 120
+        publisher:
+          type: string
+          maxLength: 120
+        supplier:
+          type: string
+          maxLength: 120
+        licenses:
+          type: array
+          items:
+            type: object
+        properties:
+          type: object
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    AnalysisResult:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        componentPurl:
+          type: string
+          maxLength: 2048
+        componentHash:
+          type: string
+          maxLength: 120
+        verdict:
+          type: string
+          maxLength: 120
+          enum: [MALWARE, CLEAN, UNKNOWN]
+        findingsCount:
+          type: integer
+        summary:
+          type: string
+          maxLength: 4096
+        scannedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        validUntil:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    ComponentAnalysisQueueItem:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        componentPurl:
+          type: string
+          maxLength: 2048
+        status:
+          type: string
+          maxLength: 120
+          enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+        reason:
+          type: string
+          maxLength: 120
+          enum: [SCHEDULED, MANUAL, BACKFILL]
+        attempts:
+          type: integer
+        lastError:
+          type: string
+          maxLength: 4096
+        lockedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        lockedBy:
+          type: string
+          maxLength: 255
+        scheduledFor:
+          type: string
+          maxLength: 120
+          format: date-time
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        completedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    ComponentAnalysisFinding:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        componentPurl:
+          type: string
+          maxLength: 2048
+        malwarePurl:
+          type: string
+          maxLength: 2048
+        sourceMalwareInputResultId:
+          type: string
+          maxLength: 120
+          format: uuid
+        matchType:
+          type: string
+          maxLength: 120
+          enum: [EXACT, CONTAINS_PREFIX]
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    ComponentAnalysisEnqueueRequest:
+      type: object
+      required: [componentPurl]
+      properties:
+        componentPurl:
+          type: string
+          maxLength: 2048
+        reason:
+          type: string
+          maxLength: 120
+          enum: [SCHEDULED, MANUAL, BACKFILL]
+
+    ComponentAnalysisMalwareSchedule:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        interval:
+          type: string
+          maxLength: 120
+          description: Go duration string (e.g. "24h", "30m"). Returned even when disabled.
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    ComponentAnalysisMalwareSchedulePatchRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        interval:
+          type: string
+          maxLength: 120
+          description: Go duration string (e.g. "24h", "30m"). When enabled is true, interval must be > 0.
+
+    TestRevisionMalwareSummary:
+      type: object
+      description: Materialized malware summary for the active test revision (cached read model).
+      properties:
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        malwareComponentCount:
+          type: integer
+          minimum: 0
+        computedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        status:
+          type: string
+          maxLength: 120
+          enum: [PENDING, COMPUTED]
+
+    ScanComponentResult:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        componentPurl:
+          type: string
+          maxLength: 2048
+        componentHash:
+          type: string
+          maxLength: 120
+        analysisResultId:
+          type: string
+          maxLength: 120
+          format: uuid
+        scanId:
+          type: string
+          maxLength: 120
+          format: uuid
+        sourceId:
+          type: string
+          maxLength: 120
+          format: uuid
+        resultFilename:
+          type: string
+          maxLength: 255
+        evidence:
+          type: string
+          maxLength: 4096
+        detailsJson:
+          type: object
+        publishedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        modifiedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        detectVersion:
+          type: string
+          maxLength: 120
+        fixedVersion:
+          type: string
+          maxLength: 120
+        isMalware:
+          type: boolean
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        actorId:
+          type: string
+          maxLength: 120
+          format: uuid
+        action:
+          type: string
+          maxLength: 200
+        entityType:
+          type: string
+          maxLength: 200
+        entityId:
+          type: string
+          maxLength: 120
+          format: uuid
+        details:
+          type: object
+        ipAddress:
+          type: string
+          maxLength: 200
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    EventAggregate:
+      type: object
+      properties:
+        eventKey:
+          type: string
+          maxLength: 240
+        category:
+          type: string
+          maxLength: 120
+        severity:
+          type: string
+          maxLength: 16
+          enum: [INFO, WARN, ERROR]
+        minRole:
+          type: string
+          maxLength: 16
+          enum: [read, write, admin]
+        title:
+          type: string
+          maxLength: 240
+        message:
+          type: string
+          maxLength: 2000
+        component:
+          type: string
+          maxLength: 240
+        errorId:
+          type: string
+          maxLength: 120
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        firstSeenAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        lastSeenAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        occurrences:
+          type: integer
+        acknowledgedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        status:
+          type: string
+          maxLength: 32
+          enum: [open, acknowledged]
+
+    EventsOpenCountResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          example: 12
+
+    EventsListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventAggregate"
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+
+    EventDetailsResponse:
+      type: object
+      properties:
+        event:
+          $ref: "#/components/schemas/EventAggregate"
+        occurrences:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+
+    DashboardTopItem:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 240
+        value:
+          type: integer
+
+    DashboardPackageType:
+      type: object
+      properties:
+        packageType:
+          type: string
+          maxLength: 120
+        count:
+          type: integer
+        percentage:
+          type: number
+          format: float
+
+    DashboardMalwarePackage:
+      type: object
+      properties:
+        purl:
+          type: string
+          maxLength: 2048
+        occurrences:
+          type: integer
+        lastSeenAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+
+    DashboardIngestActivity:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        timestamp:
+          type: string
+          maxLength: 120
+          format: date-time
+        status:
+          type: string
+          maxLength: 120
+        stage:
+          type: string
+          maxLength: 120
+        componentsImported:
+          type: integer
+        productId:
+          type: string
+          maxLength: 120
+          format: uuid
+          nullable: true
+        scopeId:
+          type: string
+          maxLength: 120
+          format: uuid
+          nullable: true
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+          nullable: true
+        productName:
+          type: string
+          maxLength: 240
+        scopeName:
+          type: string
+          maxLength: 240
+        testName:
+          type: string
+          maxLength: 240
+        errorMessage:
+          type: string
+          maxLength: 2000
+
+    DashboardIngestBucket:
+      type: object
+      properties:
+        bucketStart:
+          type: string
+          maxLength: 120
+          format: date-time
+        imports:
+          type: integer
+        componentsImported:
+          type: integer
+
+    DashboardVerdictDistribution:
+      type: object
+      properties:
+        malware:
+          type: integer
+        clean:
+          type: integer
+        unknown:
+          type: integer
+
+    DashboardKpis:
+      type: object
+      properties:
+        malwareActive:
+          type: integer
+        affectedTests:
+          type: integer
+        oldestPackageScanAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        lastAnalysisAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        lastMalwareSummaryComputedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        ingestImports:
+          type: integer
+        ingestComponents:
+          type: integer
+        overridesActive:
+          type: integer
+
+    DashboardOverviewData:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        rangeStart:
+          type: string
+          maxLength: 120
+          format: date-time
+        rangeEnd:
+          type: string
+          maxLength: 120
+          format: date-time
+        projectCount:
+          type: integer
+        topN:
+          type: integer
+        kpis:
+          $ref: "#/components/schemas/DashboardKpis"
+        verdictDistribution:
+          $ref: "#/components/schemas/DashboardVerdictDistribution"
+        topProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardTopItem"
+        topScopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardTopItem"
+        topPackageTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardPackageType"
+        topMalwarePackages:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardMalwarePackage"
+        recentIngest:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardIngestActivity"
+        ingestTrend:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardIngestBucket"
+
+    DashboardOverviewResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+          maxLength: 32
+          enum: [project]
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        range:
+          type: string
+          maxLength: 8
+          enum: [24h, 7d, 30d, 90d]
+        data:
+          $ref: "#/components/schemas/DashboardOverviewData"
+
+    DataGraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 2048
+        label:
+          type: string
+          maxLength: 512
+        purl:
+          type: string
+          maxLength: 2048
+        pkgType:
+          type: string
+          maxLength: 120
+        pkgNamespace:
+          type: string
+          maxLength: 240
+        version:
+          type: string
+          maxLength: 160
+        isMalware:
+          type: boolean
+        malwareCount:
+          type: integer
+
+    DataGraphEdge:
+      type: object
+      properties:
+        from:
+          type: string
+          maxLength: 2048
+        to:
+          type: string
+          maxLength: 2048
+        relationshipType:
+          type: string
+          maxLength: 120
+
+    DataGraphChainMetadata:
+      type: object
+      properties:
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        productId:
+          type: string
+          maxLength: 120
+          format: uuid
+        productName:
+          type: string
+          maxLength: 240
+        scopeId:
+          type: string
+          maxLength: 120
+          format: uuid
+        scopeName:
+          type: string
+          maxLength: 240
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        testName:
+          type: string
+          maxLength: 240
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        sbomStandard:
+          type: string
+          maxLength: 32
+        sbomSpecVersion:
+          type: string
+          maxLength: 32
+        sbomProducer:
+          type: string
+          maxLength: 32
+        generatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        truncated:
+          type: boolean
+        truncationReason:
+          type: string
+          maxLength: 400
+        nodeCount:
+          type: integer
+        edgeCount:
+          type: integer
+
+    DataGraphChainData:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataGraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataGraphEdge"
+        metadata:
+          $ref: "#/components/schemas/DataGraphChainMetadata"
+
+    DataGraphChainResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+          maxLength: 32
+          enum: [project]
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        data:
+          $ref: "#/components/schemas/DataGraphChainData"
+
+    DataGraphComponentIdentity:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        purl:
+          type: string
+          maxLength: 2048
+        pkgName:
+          type: string
+          maxLength: 400
+        version:
+          type: string
+          maxLength: 200
+        pkgType:
+          type: string
+          maxLength: 120
+        pkgNamespace:
+          type: string
+          maxLength: 240
+        sbomType:
+          type: string
+          maxLength: 120
+        publisher:
+          type: string
+          maxLength: 240
+        supplier:
+          type: string
+          maxLength: 240
+        licenses: {}
+        properties: {}
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        projectName:
+          type: string
+          maxLength: 240
+        productId:
+          type: string
+          maxLength: 120
+          format: uuid
+        productName:
+          type: string
+          maxLength: 240
+        scopeId:
+          type: string
+          maxLength: 120
+          format: uuid
+        scopeName:
+          type: string
+          maxLength: 240
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        testName:
+          type: string
+          maxLength: 240
+        sbomStandard:
+          type: string
+          maxLength: 32
+        sbomSpecVersion:
+          type: string
+          maxLength: 32
+        sbomProducer:
+          type: string
+          maxLength: 32
+        revisionIsActive:
+          type: boolean
+        revisionCreatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+    DataGraphMalwareSummary:
+      type: object
+      properties:
+        verdict:
+          type: string
+          maxLength: 32
+        findingsCount:
+          type: integer
+        summary:
+          type: string
+          maxLength: 4000
+        scannedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        validUntil:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+
+    DataGraphComponentFinding:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        componentPurl:
+          type: string
+          maxLength: 2048
+        malwarePurl:
+          type: string
+          maxLength: 2048
+        sourceMalwareInputResultId:
+          type: string
+          maxLength: 120
+          format: uuid
+        matchType:
+          type: string
+          maxLength: 64
+        createdAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        updatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        triageStatus:
+          type: string
+          maxLength: 32
+        triagePriority:
+          type: string
+          maxLength: 16
+          nullable: true
+        effectivePriority:
+          type: string
+          maxLength: 16
+        triageReason:
+          type: string
+          maxLength: 2000
+          nullable: true
+        triageExpiresAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        triageUpdatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+
+    DataGraphComponentOccurrence:
+      type: object
+      properties:
+        productId:
+          type: string
+          maxLength: 120
+          format: uuid
+        productName:
+          type: string
+          maxLength: 240
+        scopeId:
+          type: string
+          maxLength: 120
+          format: uuid
+        scopeName:
+          type: string
+          maxLength: 240
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        testName:
+          type: string
+          maxLength: 240
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        revisionIsActive:
+          type: boolean
+        revisionCreatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        sbomProducer:
+          type: string
+          maxLength: 32
+
+    DataGraphComponentDetailsData:
+      type: object
+      properties:
+        identity:
+          $ref: "#/components/schemas/DataGraphComponentIdentity"
+        malwareSummary:
+          $ref: "#/components/schemas/DataGraphMalwareSummary"
+        malwareFindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataGraphComponentFinding"
+        rawFindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScanComponentResult"
+        queueHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/ComponentAnalysisQueueItem"
+        occurrences:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataGraphComponentOccurrence"
+
+    DataGraphComponentDetailsResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+          maxLength: 32
+          enum: [project]
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        revisionId:
+          type: string
+          maxLength: 120
+          format: uuid
+        purl:
+          type: string
+          maxLength: 2048
+        data:
+          $ref: "#/components/schemas/DataGraphComponentDetailsData"
+
+    SecurityPostureScore:
+      type: object
+      properties:
+        value:
+          type: integer
+          minimum: 0
+          maximum: 100
+        label:
+          type: string
+          maxLength: 64
+
+    SecurityPostureKpis:
+      type: object
+      properties:
+        unknownPending:
+          type: integer
+        activeComponents:
+          type: integer
+        ingestFailures:
+          type: integer
+        ingestCompleted:
+          type: integer
+        ingestFailurePercent:
+          type: number
+          format: float
+        osvSyncStatus:
+          type: string
+          maxLength: 64
+        osvLastSyncAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        osvErrors:
+          type: integer
+        openErrorEvents:
+          type: integer
+        queueBacklog:
+          type: integer
+        inventoryTopType:
+          type: string
+          maxLength: 120
+        lastAnalysisAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+
+    SecurityPostureTopItem:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 160
+        value:
+          type: integer
+
+    SecurityPostureIngestBucket:
+      type: object
+      properties:
+        bucketStart:
+          type: string
+          maxLength: 120
+          format: date-time
+        imports:
+          type: integer
+        failures:
+          type: integer
+
+    SecurityPostureSyncBucket:
+      type: object
+      properties:
+        bucketStart:
+          type: string
+          maxLength: 120
+          format: date-time
+        runs:
+          type: integer
+        failures:
+          type: integer
+
+    SecurityPosturePackageType:
+      type: object
+      properties:
+        packageType:
+          type: string
+          maxLength: 120
+        count:
+          type: integer
+        percentage:
+          type: number
+          format: float
+
+    SecurityPostureFailure:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          maxLength: 120
+          format: date-time
+        component:
+          type: string
+          maxLength: 240
+        summary:
+          type: string
+          maxLength: 4000
+        status:
+          type: string
+          maxLength: 64
+
+    SecurityPostureUpload:
+      type: object
+      properties:
+        id:
+          type: string
+          maxLength: 120
+          format: uuid
+        timestamp:
+          type: string
+          maxLength: 120
+          format: date-time
+        status:
+          type: string
+          maxLength: 64
+        stage:
+          type: string
+          maxLength: 120
+        componentsImported:
+          type: integer
+        productId:
+          type: string
+          maxLength: 120
+          format: uuid
+        scopeId:
+          type: string
+          maxLength: 120
+          format: uuid
+        testId:
+          type: string
+          maxLength: 120
+          format: uuid
+        productName:
+          type: string
+          maxLength: 240
+        scopeName:
+          type: string
+          maxLength: 240
+        testName:
+          type: string
+          maxLength: 240
+        errorMessage:
+          type: string
+          maxLength: 4000
+
+    SecurityPostureOverviewData:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+        rangeStart:
+          type: string
+          maxLength: 120
+          format: date-time
+        rangeEnd:
+          type: string
+          maxLength: 120
+          format: date-time
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        topN:
+          type: integer
+        bucket:
+          type: string
+          maxLength: 16
+          enum: [day, week]
+        score:
+          $ref: "#/components/schemas/SecurityPostureScore"
+        kpis:
+          $ref: "#/components/schemas/SecurityPostureKpis"
+        ingestTrend:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPostureIngestBucket"
+        ingestFailureTop:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPostureTopItem"
+        osvSyncTrend:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPostureSyncBucket"
+        osvTopErrorStages:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPostureTopItem"
+        inventoryTopTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPosturePackageType"
+        recentUploads:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPostureUpload"
+        recentFailures:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityPostureFailure"
+
+    SecurityPostureOverviewResponse:
+      type: object
+      properties:
+        scope:
+          type: string
+          maxLength: 32
+          enum: [project]
+        projectId:
+          type: string
+          maxLength: 120
+          format: uuid
+        range:
+          type: string
+          maxLength: 8
+          enum: [24h, 7d, 30d, 90d]
+        bucket:
+          type: string
+          maxLength: 16
+          enum: [day, week]
+        data:
+          $ref: "#/components/schemas/SecurityPostureOverviewData"
+
+    AlertGroup:
+      type: object
+      required: [id, projectId, severity, category, type, status, groupKey, title, occurrences, firstSeenAt, lastSeenAt, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        severity: { type: string, enum: [INFO, WARN, ERROR] }
+        category: { type: string }
+        type: { type: string }
+        status: { type: string, enum: [OPEN, ACKNOWLEDGED, CLOSED] }
+        groupKey: { type: string }
+        title: { type: string }
+        entityRef: { type: string, nullable: true }
+        occurrences: { type: integer, minimum: 0 }
+        firstSeenAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        lastNotifiedAt: { type: string, format: date-time, nullable: true }
+        acknowledgedAt: { type: string, format: date-time, nullable: true }
+        acknowledgedBy: { type: string, format: uuid, nullable: true }
+        closedAt: { type: string, format: date-time, nullable: true }
+        closedBy: { type: string, format: uuid, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AlertOccurrence:
+      type: object
+      required: [id, projectId, groupId, severity, category, type, title, occurredAt, details, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        groupId: { type: string, format: uuid }
+        severity: { type: string, enum: [INFO, WARN, ERROR] }
+        category: { type: string }
+        type: { type: string }
+        title: { type: string }
+        occurredAt: { type: string, format: date-time }
+        productId: { type: string, format: uuid, nullable: true }
+        scopeId: { type: string, format: uuid, nullable: true }
+        testId: { type: string, format: uuid, nullable: true }
+        entityRef: { type: string, nullable: true }
+        details: {}
+        createdAt: { type: string, format: date-time }
+
+    AlertGroupsListResponse:
+      type: object
+      required: [items, page, pageSize, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertGroup"
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    AlertOccurrencesListResponse:
+      type: object
+      required: [items, page, pageSize, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertOccurrence"
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+
+    AlertRouteRef:
+      type: object
+      required: [targetType, targetId]
+      properties:
+        targetType: { type: string, enum: [PRODUCT, SCOPE, TEST] }
+        targetId: { type: string, format: uuid }
+
+    AlertConnectorSettings:
+      type: object
+      required: [projectId, connectorType, isEnabled, updatedAt, routes]
+      properties:
+        projectId: { type: string, format: uuid }
+        connectorType:
+          type: string
+          enum: [DISCORD, SMTP, MSTEAMSV2, JIRA, OPSGENIE, PAGERDUTY, PUSHOVER, ROCKETCHAT, SLACK, SNS, TELEGRAM, VICTOROPS, WEBEX, WEBHOOK, WECHAT]
+        isEnabled: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertRouteRef"
+
+    AlertingConnectorConnectionStatus:
+      type: object
+      required: [configured, connectionEnabled, lastTestStatus, lastTestMessage]
+      properties:
+        configured: { type: boolean }
+        connectionEnabled: { type: boolean }
+        lastTestStatus: { type: string, enum: [NOT_CONFIGURED, PASSED, FAILED] }
+        lastTestAt: { type: string, format: date-time, nullable: true }
+        lastTestMessage: { type: string }
+
+    AlertingConnectorState:
+      type: object
+      required: [type, projectId, alertingEnabled, routes, connectionStatus]
+      properties:
+        type:
+          type: string
+          enum: [discord, smtp, msteamsv2, jira, opsgenie, pagerduty, pushover, rocketchat, slack, sns, telegram, victorops, webex, webhook, wechat]
+        projectId: { type: string, format: uuid }
+        alertingEnabled: { type: boolean }
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertRouteRef"
+        connectionStatus:
+          $ref: "#/components/schemas/AlertingConnectorConnectionStatus"
+
+    AlertingConnectorUpsertRequest:
+      type: object
+      required: [enabled, routes]
+      properties:
+        enabled: { type: boolean }
+        routes:
+          type: object
+          properties:
+            productIds:
+              type: array
+              items: { type: string, format: uuid }
+            scopeIds:
+              type: array
+              items: { type: string, format: uuid }
+            testIds:
+              type: array
+              items: { type: string, format: uuid }
+
+    AlertDedupScope:
+      type: string
+      enum: [GLOBAL, PRODUCT, SCOPE, TEST]
+
+    AlertDedupRule:
+      type: object
+      required: [id, projectId, alertType, dedupScope, enabled]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        alertType: { type: string }
+        dedupScope:
+          $ref: "#/components/schemas/AlertDedupScope"
+        productId: { type: string, format: uuid, nullable: true }
+        scopeId: { type: string, format: uuid, nullable: true }
+        testId: { type: string, format: uuid, nullable: true }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time, nullable: true }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
+    AlertDedupRulesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertDedupRule"
+
+    AlertDedupRuleInput:
+      type: object
+      required: [dedupScope]
+      properties:
+        dedupScope:
+          $ref: "#/components/schemas/AlertDedupScope"
+        productId: { type: string, format: uuid, nullable: true }
+        scopeId: { type: string, format: uuid, nullable: true }
+        testId: { type: string, format: uuid, nullable: true }
+        enabled: { type: boolean, default: true }
+
+    PutAlertDedupRulesRequest:
+      type: object
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertDedupRuleInput"
+
+    SyncStartResponse:
+      type: object
+      properties:
+        syncId:
+          type: string
+          maxLength: 120
+          format: uuid
+        mode:
+          type: string
+          maxLength: 120
+          enum: [full, latest]
+        status:
+          type: string
+          maxLength: 120
+        startedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+
+security:
+  - BearerAuth: []
+  - CookieAuth: []
+
+paths:
+  /auth/login:
+    post:
+      summary: Login and set session + refresh cookies
+      operationId: authLogin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        '200':
+          description: Logged in
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                maxLength: 120
+              description: Session cookie (`__Host-CTWALL_SESSION`) and refresh cookie (`__Secure-CTWALL_REFRESH`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    maxLength: 120
+                    example: ok
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/refresh:
+    post:
+      summary: Refresh session using refresh token cookie
+      operationId: authRefresh
+      security:
+        - RefreshCookieAuth: []
+      responses:
+        '200':
+          description: Session refreshed
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                maxLength: 120
+              description: New session cookie (`__Host-CTWALL_SESSION`) and rotated refresh cookie (`__Secure-CTWALL_REFRESH`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    maxLength: 120
+                    example: ok
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/logout:
+    post:
+      summary: Logout and revoke refresh token
+      operationId: authLogout
+      responses:
+        '204':
+          description: Logged out
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Logout failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/change-password:
+    post:
+      summary: Change current user password
+      operationId: authChangePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        '204':
+          description: Password updated
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Password update failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/me:
+    get:
+      summary: Get current user
+      operationId: authMe
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /dashboard/overview:
+    get:
+      summary: Project dashboard overview (active selected project)
+      operationId: getDashboardOverview
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 8
+            enum: [24h, 7d, 30d, 90d]
+            default: 7d
+        - name: topN
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+      responses:
+        '200':
+          description: Dashboard overview loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardOverviewResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed to load dashboard overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /data/graph/chain:
+    get:
+      summary: Dependency graph chain for selected test/revision
+      operationId: getDataGraphChain
+      parameters:
+        - name: testId
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: revisionId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: producer
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 16
+            enum: [syft, trivy, grype, other]
+        - name: maxNodes
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 1200
+      responses:
+        '200':
+          description: Dependency graph loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataGraphChainResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Test/revision not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed to load dependency graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /data/graph/component-details:
+    get:
+      summary: Full component details for Data Graph node
+      operationId: getDataGraphComponentDetails
+      parameters:
+        - name: testId
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: revisionId
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: purl
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        '200':
+          description: Component details loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataGraphComponentDetailsResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Test/revision/component not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed to load component details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /security/posture/overview:
+    get:
+      summary: Project security posture overview (technical metrics)
+      operationId: getSecurityPostureOverview
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 8
+            enum: [24h, 7d, 30d, 90d]
+            default: 7d
+        - name: topN
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+        - name: bucket
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 16
+            enum: [day, week]
+            default: day
+      responses:
+        '200':
+          description: Security posture overview loaded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SecurityPostureOverviewResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed to load security posture overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Events ---
+  /events/open-count:
+    get:
+      summary: Count open ERROR events for Events badge
+      operationId: eventsOpenCount
+      responses:
+        '200':
+          description: Open events count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsOpenCountResponse"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /events:
+    get:
+      summary: List aggregated Events (filtered + paginated, backend-side)
+      operationId: listEvents
+      parameters:
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Comma-separated list (INFO,WARN,ERROR). Default ERROR.
+        - name: category_in
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Legacy filter. Comma-separated list of categories to include (applies to all severities when severity-specific filters are not provided).
+        - name: category_in_error
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of categories to include for ERROR (optional; empty/omitted = all categories).
+        - name: category_in_warn
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of categories to include for WARN (optional; empty/omitted = all categories).
+        - name: category_in_info
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of categories to include for INFO (optional; empty/omitted = all categories).
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 32
+            enum: [open, acknowledged]
+          description: Default open.
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+          description: Optional search string (title/message/event_key).
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+            format: date-time
+          description: Optional RFC3339 start timestamp.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+            format: date-time
+          description: Optional RFC3339 end timestamp.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Events list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventsListResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /events/{eventKey}:
+    get:
+      summary: Get single event aggregate + recent occurrences
+      operationId: getEvent
+      parameters:
+        - in: path
+          name: eventKey
+          required: true
+          schema:
+            type: string
+            maxLength: 240
+      responses:
+        '200':
+          description: Event details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailsResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /events/{eventKey}/ack:
+    post:
+      summary: Acknowledge an event (admin)
+      operationId: ackEvent
+      parameters:
+        - in: path
+          name: eventKey
+          required: true
+          schema:
+            type: string
+            maxLength: 240
+      responses:
+        '204':
+          description: Acknowledged
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Alerts ---
+  /alert-groups:
+    get:
+      summary: List alert groups (batched, project-scoped)
+      operationId: listAlertGroups
+      parameters:
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Comma-separated list (INFO,WARN,ERROR).
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of categories (eventmeta.Category).
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of low-cardinality alert types (e.g. malware.detected).
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 64
+          description: Comma-separated list of statuses (OPEN,ACKNOWLEDGED,CLOSED).
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+          description: Optional search string (title/entity/type/category).
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional RFC3339 start timestamp (last_seen_at).
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional RFC3339 end timestamp (last_seen_at).
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Alert groups list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertGroupsListResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alert-groups/{id}:
+    get:
+      summary: Get alert group by id (project-scoped)
+      operationId: getAlertGroup
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Alert group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertGroup"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alert-groups/{id}/acknowledge:
+    post:
+      summary: Acknowledge an alert group (admin, non-malware)
+      operationId: acknowledgeAlertGroup
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Acknowledged
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Conflict (malware groups managed via Explorer triage)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alert-groups/{id}/close:
+    post:
+      summary: Close an alert group (admin, non-malware)
+      operationId: closeAlertGroup
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Closed
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Conflict (malware groups managed via Explorer triage)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alert-occurrences:
+    get:
+      summary: List alert occurrences (append-only, project-scoped)
+      operationId: listAlertOccurrences
+      parameters:
+        - name: groupId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional group id filter.
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Comma-separated list (INFO,WARN,ERROR) (filters by group severity).
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of categories (filters by group category).
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 400
+          description: Comma-separated list of types (filters by group type).
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+          description: Optional search string (entity/title/type).
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional RFC3339 start timestamp (occurred_at).
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Optional RFC3339 end timestamp (occurred_at).
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Alert occurrences list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertOccurrencesListResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alerting/connectors:
+    get:
+      summary: Get per-project alerting connector routing + read-only connection status
+      operationId: getAlertingConnectors
+      responses:
+        '200':
+          description: Connector routing state
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AlertingConnectorState"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alerting/connectors/{type}:
+    put:
+      summary: Update per-project alerting routing for connector (admin)
+      operationId: upsertAlertingConnector
+      parameters:
+        - in: path
+          name: type
+          required: true
+          schema:
+            type: string
+            enum: [discord, smtp, msteamsv2, jira, opsgenie, pagerduty, pushover, rocketchat, slack, sns, telegram, victorops, webex, webhook, wechat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlertingConnectorUpsertRequest"
+      responses:
+        '200':
+          description: Updated connector routing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertConnectorSettings"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alerting/dedup-rules:
+    get:
+      summary: List per-project alert deduplication rules
+      operationId: listAlertDedupRules
+      parameters:
+        - in: query
+          name: alertType
+          required: false
+          schema:
+            type: string
+            default: malware.detected
+          description: Optional alert type (default malware.detected).
+      responses:
+        '200':
+          description: Dedup rules list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDedupRulesResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Replace per-project alert deduplication rules (admin/writer)
+      operationId: putAlertDedupRules
+      parameters:
+        - in: query
+          name: alertType
+          required: false
+          schema:
+            type: string
+            default: malware.detected
+          description: Optional alert type (default malware.detected).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutAlertDedupRulesRequest"
+      responses:
+        '200':
+          description: Updated dedup rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDedupRulesResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users:
+    post:
+      summary: Create user (admin)
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: User exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users/{userId}:
+    patch:
+      summary: Update user (admin)
+      operationId: updateUser
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users/{userId}/password:
+    post:
+      summary: Reset user password (admin, other USER accounts only)
+      operationId: resetUserPassword
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetUserPasswordRequest"
+      responses:
+        '204':
+          description: Password reset completed
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Password reset not applicable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /users/{userId}/tokens:
+    post:
+      summary: Create API token for user (self; admin only for service accounts)
+      operationId: createUserToken
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserTokenRequest"
+      responses:
+        '201':
+          description: Token created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUserTokenResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  # --- Ingest ---
+  /ingest:
+    post:
+      summary: Upload SBOM
+      description: Uploads a new SBOM file. Creates Product/Scope/Test if they don't exist.
+      operationId: ingestSbom
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [sbom_file]
+              properties:
+                sbom_file:
+                  type: string
+                  maxLength: 120
+                  format: binary
+                  description: "The SBOM file (JSON/XML), optionally gzipped."
+                product:
+                  type: string
+                  description: "Product name (or productId)"
+                  maxLength: 120
+                scope:
+                  type: string
+                  description: "Scope name (or scopeId)"
+                  maxLength: 120
+                test:
+                  type: string
+                  description: "Test name (or testId)"
+                  maxLength: 120
+                sbomType:
+                  allOf:
+                    - $ref: "#/components/schemas/SbomType"
+                  description: "Optional SBOM type metadata. Must match the uploaded SBOM."
+                sbomProducer:
+                  type: string
+                  maxLength: 120
+                  enum: [trivy, syft, grype, other]
+                tags:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: string
+                    maxLength: 64
+                metadataJson:
+                  type: string
+                  description: "JSON string with additional metadata"
+                  maxLength: 65536
+            encoding:
+              sbomType:
+                contentType: application/json
+              metadataJson:
+                contentType: application/json
+      responses:
+        '201':
+          description: SBOM uploaded and processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  productId:
+                    type: string
+                    maxLength: 120
+                    format: uuid
+                  scopeId:
+                    type: string
+                    maxLength: 120
+                    format: uuid
+                  testId:
+                    type: string
+                    maxLength: 120
+                    format: uuid
+                  revisionId:
+                    type: string
+                    maxLength: 120
+                    format: uuid
+                  sbomSha256:
+                    type: string
+                    maxLength: 120
+                  componentsImportedCount:
+                    type: integer
+                  createdAt:
+                    type: string
+                    maxLength: 120
+                    format: date-time
+        '400':
+          description: Invalid input or file format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Search ---
+  /search:
+    get:
+      summary: Global Search
+      operationId: globalSearch
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 200
+          description: "Search query. Supports wildcard '*' and contains."
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Product'
+                  scopes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Scope'
+                  tests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Test'
+
+  # --- Products ---
+  /products:
+    get:
+      summary: List Products
+      operationId: listProducts
+      responses:
+        '200':
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+    post:
+      summary: Create Product
+      operationId: createProduct
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 120
+                description:
+                  type: string
+                  maxLength: 120
+      responses:
+        '201':
+          description: Product created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+
+  /products/{productId}:
+    get:
+      summary: Get Product details
+      operationId: getProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+    delete:
+      summary: Delete Product
+      operationId: deleteProduct
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '204':
+          description: Product deleted
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Scopes ---
+  /products/{productId}/scopes:
+    get:
+      summary: List Scopes for Product
+      operationId: listScopes
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: List of scopes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scope'
+    post:
+      summary: Create Scope
+      operationId: createScope
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 120
+                description:
+                  type: string
+                  maxLength: 120
+      responses:
+        '201':
+          description: Scope created
+
+  /scopes/{scopeId}:
+    delete:
+      summary: Delete Scope
+      operationId: deleteScope
+      parameters:
+        - name: scopeId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '204':
+          description: Scope deleted
+        '404':
+          description: Scope not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- Tests ---
+  /scopes/{scopeId}/tests:
+    get:
+      summary: List Tests for Scope
+      operationId: listTests
+      parameters:
+        - name: scopeId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: List of tests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Test'
+
+  /tests/{testId}:
+    delete:
+      summary: Delete Test
+      operationId: deleteTest
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '204':
+          description: Test deleted
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/revisions:
+    get:
+      summary: Get Test History
+      operationId: listTestRevisions
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: List of revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TestRevision'
+
+  /tests/{testId}/revisions/{revisionId}/depalert-verdict:
+    get:
+      summary: Get revision malware verdict for DepAlert
+      operationId: getDepAlertRevisionVerdict
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: revisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Revision malware verdict for the selected project scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepAlertRevisionVerdict'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Revision not found in selected project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/components:
+    get:
+      summary: List Components for Test
+      operationId: listComponents
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+        - name: purl
+          in: query
+          schema:
+            type: string
+            maxLength: 2048
+        - name: pkgName
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: pkgType
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: pkgNamespace
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: version
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: sbomType
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: publisher
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: supplier
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: sort
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            description: "Sort field (prefix '-' for desc)."
+      responses:
+        '200':
+          description: List of components
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Component'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/components/count:
+    get:
+      summary: Count Components for Test (active revision)
+      operationId: countComponents
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Total components for active revision.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count]
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/components/{componentId}:
+    get:
+      summary: Get Component Details
+      operationId: getComponent
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: componentId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Component details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Component'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Component not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /tests/{testId}/component-analysis/explorer/summary:
+    get:
+      summary: Get Malware Summary for Test (active revision)
+      operationId: getTestMalwareSummary
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Materialized malware summary for the active revision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestRevisionMalwareSummary'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /component-analysis/explorer/summary/recompute:
+    post:
+      summary: Recompute Malware Summaries for All Active Test Revisions
+      operationId: recomputeAllActiveTestMalwareSummaries
+      responses:
+        '202':
+          description: Recompute jobs enqueued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enqueued:
+                    type: integer
+                    minimum: 0
+                required: [enqueued]
+        '500':
+          description: Failed to enqueue recomputation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /component-analysis/explorer/summary/recompute-history:
+    get:
+      summary: List malware summary recompute history
+      operationId: listMalwareSummaryRecomputeHistory
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Summary recompute history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /tests/{testId}/component-analysis/explorer/findings:
+    get:
+      summary: List Malware Mappings for Test (active revision, verdict MALWARE)
+      operationId: listTestMalwareFindings
+      parameters:
+        - name: testId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Component-to-malware mappings for active test revision filtered to verdict MALWARE.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComponentAnalysisFinding'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Test not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # --- SBOMs ---
+  /sboms:
+    get:
+      summary: List SBOM revisions (flat)
+      operationId: listSboms
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: productId
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: scopeId
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: testId
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: sbomType
+          in: query
+          deprecated: true
+          description: "Legacy filter. Use sbomStandard + sbomSpecVersion instead."
+          schema:
+            type: string
+            maxLength: 120
+        - name: sbomStandard
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            enum: [cyclonedx, spdx, swid]
+        - name: sbomSpecVersion
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            pattern: '^(unknown|\\d+(\\.\\d+){0,2})$'
+        - name: sbomProducer
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            enum: [trivy, syft, grype, other]
+        - name: tag
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+      responses:
+        '200':
+          description: Flat list of SBOM revisions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    revisionId:
+                      type: string
+                      maxLength: 120
+                      format: uuid
+                    testId:
+                      type: string
+                      maxLength: 120
+                      format: uuid
+                    scopeId:
+                      type: string
+                      maxLength: 120
+                      format: uuid
+                    productId:
+                      type: string
+                      maxLength: 120
+                      format: uuid
+                    sbomSha256:
+                      type: string
+                      maxLength: 120
+                    sbomType:
+                      $ref: "#/components/schemas/SbomType"
+                    sbomProducer:
+                      type: string
+                      maxLength: 120
+                      enum: [trivy, syft, grype, other]
+                    tags:
+                      type: array
+                      maxItems: 50
+                      items:
+                        type: string
+                        maxLength: 64
+                    componentsImportedCount:
+                      type: integer
+                    isActive:
+                      type: boolean
+                    lastModifiedAt:
+                      type: string
+                      maxLength: 120
+                      format: date-time
+                    createdAt:
+                      type: string
+                      maxLength: 120
+                      format: date-time
+
+  /sboms/{revisionId}/download:
+    get:
+      summary: Download Original SBOM
+      operationId: downloadSbom
+      parameters:
+        - name: revisionId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Original SBOM file
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                maxLength: 120
+                example: "attachment; filename=sbom.json"
+            X-Content-Type-Options:
+              schema:
+                type: string
+                maxLength: 120
+                example: "nosniff"
+          content:
+            application/gzip:
+              schema:
+                type: string
+                maxLength: 120
+                format: binary
+            application/json:
+              schema:
+                type: object
+
+  # --- Malware ---
+  /explorer/osv/download_all:
+    post:
+      summary: Trigger full OSV malware sync
+      operationId: downloadOsvAll
+      responses:
+        '202':
+          description: OSV sync started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStartResponse"
+        '409':
+          description: Sync already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Sync start failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/osv/download_latest:
+    post:
+      summary: Trigger incremental OSV malware sync
+      operationId: downloadOsvLatest
+      responses:
+        '202':
+          description: OSV sync started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStartResponse"
+        '409':
+          description: Sync already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Sync start failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/results:
+    get:
+      summary: List aggregated malware results
+      operationId: listMalwareResults
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: purl
+          in: query
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        '200':
+          description: Malware analysis results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisResult"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/findings:
+    get:
+      summary: List raw malware findings
+      operationId: listMalwareFindings
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: purl
+          in: query
+          schema:
+            type: string
+            maxLength: 2048
+        - name: sourceId
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '200':
+          description: Malware findings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScanComponentResult"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Component Analysis (Malware) ---
+  /component-analysis/explorer/queue:
+    post:
+      summary: Enqueue component malware analysis
+      operationId: enqueueComponentAnalysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComponentAnalysisEnqueueRequest"
+      responses:
+        '202':
+          description: Component analysis queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentAnalysisQueueItem"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed to enqueue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    get:
+      summary: List component analysis queue history
+      operationId: listComponentAnalysisQueue
+      parameters:
+        - name: componentPurl
+          in: query
+          schema:
+            type: string
+            maxLength: 2048
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, PROCESSING, COMPLETED, FAILED]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Queue history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ComponentAnalysisQueueItem"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /component-analysis/explorer/queue/{runId}:
+    get:
+      summary: Get component analysis queue item
+      operationId: getComponentAnalysisQueueItem
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Queue item details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentAnalysisQueueItem"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /component-analysis/explorer/findings:
+    get:
+      summary: List malware findings for component PURL
+      operationId: listComponentAnalysisFindings
+      parameters:
+        - name: componentPurl
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        '200':
+          description: Component malware findings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ComponentAnalysisFinding"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /component-analysis/explorer/findings/{findingId}:
+    get:
+      summary: Get component malware finding by id
+      operationId: getComponentAnalysisFinding
+      parameters:
+        - name: findingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Component malware finding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentAnalysisFinding"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /component-analysis/explorer/schedule:
+    get:
+      summary: Get scheduled re-analysis configuration
+      operationId: getComponentAnalysisMalwareSchedule
+      responses:
+        '200':
+          description: Schedule configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentAnalysisMalwareSchedule"
+        '500':
+          description: Failed to load schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      summary: Update scheduled re-analysis configuration
+      operationId: updateComponentAnalysisMalwareSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComponentAnalysisMalwareSchedulePatchRequest"
+      responses:
+        '200':
+          description: Updated schedule configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComponentAnalysisMalwareSchedule"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Failed to update schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/sources:
+    get:
+      summary: List malware sources
+      operationId: listMalwareSources
+      responses:
+        '200':
+          description: Malware sources
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      maxLength: 120
+                      format: uuid
+                    name:
+                      type: string
+                      maxLength: 120
+                    sourceType:
+                      type: string
+                      maxLength: 120
+                    baseUrl:
+                      type: string
+                      maxLength: 2048
+                    configJson:
+                      type: object
+                    isActive:
+                      type: boolean
+                    createdAt:
+                      type: string
+                      maxLength: 120
+                      format: date-time
+                    scanner:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          maxLength: 120
+                          format: uuid
+                        name:
+                          type: string
+                          maxLength: 120
+                        scannerType:
+                          type: string
+                          maxLength: 120
+                        version:
+                          type: string
+                          maxLength: 120
+                        resultsPath:
+                          type: string
+                          maxLength: 2048
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/sources/{sourceId}:
+    patch:
+      summary: Update malware source configuration
+      operationId: updateMalwareSource
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isActive:
+                  type: boolean
+                baseUrl:
+                  type: string
+                  maxLength: 2048
+                config:
+                  type: object
+      responses:
+        '200':
+          description: Updated malware source
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    maxLength: 120
+                    format: uuid
+                  name:
+                    type: string
+                    maxLength: 120
+                  sourceType:
+                    type: string
+                    maxLength: 120
+                  baseUrl:
+                    type: string
+                    maxLength: 2048
+                  configJson:
+                    type: object
+                  isActive:
+                    type: boolean
+                  createdAt:
+                    type: string
+                    maxLength: 120
+                    format: date-time
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Malware source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/sources/{sourceId}/sync-history:
+    get:
+      summary: List malware source sync history
+      operationId: listMalwareSourceSyncHistory
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Sync history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/sources/{sourceId}/sync-history/{syncId}/errors:
+    get:
+      summary: List malware source sync errors for a sync run
+      operationId: listMalwareSourceSyncErrors
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: syncId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 200
+      responses:
+        '200':
+          description: Sync error entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/sources/{sourceId}/results/recompute:
+    post:
+      summary: Recompute aggregated malware results for a source
+      description: |
+        Recomputes `source_malware_input_results` for component PURLs that appear in the given source's raw findings
+        (`source_malware_input_component_results`) and repairs `analysis_result_id` links. This endpoint is async-start.
+      operationId: recomputeMalwareSourceResults
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+      responses:
+        '202':
+          description: Recompute started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    maxLength: 120
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '404':
+          description: Malware source not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '409':
+          description: Recompute already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /explorer/sources/{sourceId}/results/recompute-history:
+    get:
+      summary: List malware source results recompute history
+      operationId: listMalwareSourceResultsRecomputeHistory
+      parameters:
+        - name: sourceId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Results recompute history entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  # --- Users ---
+  /users:
+    get:
+      summary: List Users (Admin only)
+      operationId: listUsers
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      maxLength: 120
+                      format: uuid
+                    email:
+                      type: string
+                      maxLength: 120
+                    role:
+                      type: string
+                      maxLength: 120
+                      enum: [ADMIN, WRITER, READER, NONE]
+                    accountType:
+                      type: string
+                      maxLength: 120
+                      enum: [USER, SERVICE_ACCOUNT]

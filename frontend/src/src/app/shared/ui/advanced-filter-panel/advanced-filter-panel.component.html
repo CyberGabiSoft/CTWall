@@ -1,0 +1,51 @@
+<div class="extended-filter-panel">
+  <div class="filter-grid">
+    @for (field of fields(); track field.key) {
+      <div class="filter-field">
+        <span class="filter-label" [id]="idPrefix() + '-' + field.key">{{ field.label }}</span>
+        <mat-button-toggle-group
+          [attr.aria-labelledby]="idPrefix() + '-' + field.key"
+          class="filter-mode-toggle"
+          [value]="field.mode"
+          (change)="modeChange.emit({ key: field.key, mode: $event.value })"
+        >
+          <mat-button-toggle value="contains">Contains</mat-button-toggle>
+          <mat-button-toggle value="select">Select</mat-button-toggle>
+        </mat-button-toggle-group>
+
+        @if (field.mode === 'select' && field.options.length > 0) {
+          <mat-form-field appearance="outline" class="filter-input">
+            <mat-select
+              [attr.aria-labelledby]="idPrefix() + '-' + field.key"
+              multiple
+              [value]="field.selected"
+              (selectionChange)="selectionChange.emit({ key: field.key, values: $event.value })"
+            >
+              @for (option of field.options; track option) {
+                <mat-option [value]="option">{{ option }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        } @else {
+          <mat-form-field appearance="outline" class="filter-input">
+            <input
+              [attr.aria-labelledby]="idPrefix() + '-' + field.key"
+              matInput
+              [placeholder]="inputPlaceholder(field)"
+              [value]="field.value"
+              (input)="onValueChange(field.key, $event)"
+            />
+          </mat-form-field>
+        }
+      </div>
+    }
+  </div>
+
+  @if (showClear()) {
+    <div class="filter-actions">
+      <button mat-stroked-button type="button" (click)="clearFilters.emit()">
+        Clear filters
+      </button>
+    </div>
+  }
+</div>

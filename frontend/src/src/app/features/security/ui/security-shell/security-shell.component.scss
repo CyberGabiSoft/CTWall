@@ -1,0 +1,9 @@
+.security-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.security-header {
+  /* header typography and layout standardized globally in `src/styles.scss` (`.ctw-shell-*`) */
+}

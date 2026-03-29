@@ -1,0 +1,354 @@
+<h2 mat-dialog-title>Configure {{ data.connector.type | uppercase }} connector</h2>
+
+<div mat-dialog-content>
+  @if (isSmtpConnector) {
+    <form [formGroup]="smtpForm" (ngSubmit)="submit()" novalidate>
+      <mat-checkbox formControlName="enabled">Enabled</mat-checkbox>
+
+      <div class="smtp-grid">
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Host</mat-label>
+          <input matInput type="text" formControlName="host" autocomplete="off" />
+          @if (smtpForm.controls.host.touched && smtpForm.controls.host.hasError('required')) {
+            <mat-error>Host is required.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Port</mat-label>
+          <input matInput type="text" formControlName="port" inputmode="numeric" autocomplete="off" />
+          @if (smtpForm.controls.port.touched && smtpForm.controls.port.hasError('required')) {
+            <mat-error>Port is required.</mat-error>
+          } @else if (smtpForm.controls.port.touched && smtpForm.controls.port.hasError('pattern')) {
+            <mat-error>Port must be numeric.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Authentication</mat-label>
+          <mat-select formControlName="auth">
+            @for (option of smtpAuthOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Encryption</mat-label>
+          <mat-select formControlName="encryption">
+            @for (option of smtpEncryptionOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Verify mode</mat-label>
+          <mat-select formControlName="verifyMode">
+            @for (option of smtpVerifyOptions; track option.value) {
+              <mat-option [value]="option.value">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Timeout (seconds)</mat-label>
+          <input matInput type="text" formControlName="timeoutSeconds" inputmode="numeric" autocomplete="off" />
+          @if (smtpForm.controls.timeoutSeconds.touched && smtpForm.controls.timeoutSeconds.hasError('required')) {
+            <mat-error>Timeout is required.</mat-error>
+          } @else if (smtpForm.controls.timeoutSeconds.touched && smtpForm.controls.timeoutSeconds.hasError('pattern')) {
+            <mat-error>Timeout must be numeric.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Repeat interval</mat-label>
+          <input matInput type="text" formControlName="repeatInterval" autocomplete="off" />
+          <mat-hint>Optional per-connector reminder interval (for example 15m, 1h, 90m).</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Username</mat-label>
+          <input matInput type="text" formControlName="username" autocomplete="username" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Password</mat-label>
+          <input matInput type="password" formControlName="password" autocomplete="new-password" />
+          <mat-hint>Re-enter secret if authentication is enabled.</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>From email</mat-label>
+          <input matInput type="email" formControlName="fromEmail" autocomplete="email" />
+          @if (smtpForm.controls.fromEmail.touched && smtpForm.controls.fromEmail.hasError('required')) {
+            <mat-error>From email is required.</mat-error>
+          } @else if (smtpForm.controls.fromEmail.touched && smtpForm.controls.fromEmail.hasError('email')) {
+            <mat-error>Enter a valid email address.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>From name</mat-label>
+          <input matInput type="text" formControlName="fromName" autocomplete="off" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Reply-To</mat-label>
+          <input matInput type="email" formControlName="replyTo" autocomplete="off" />
+          @if (smtpForm.controls.replyTo.touched && smtpForm.controls.replyTo.hasError('email')) {
+            <mat-error>Enter a valid email address.</mat-error>
+          }
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Domain (HELO/EHLO)</mat-label>
+          <input matInput type="text" formControlName="domain" autocomplete="off" />
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field field--wide">
+          <mat-label>Message template</mat-label>
+          <textarea
+            matInput
+            rows="3"
+            formControlName="messageTemplate"
+            [placeholder]="messageTemplatePlaceholder"
+            spellcheck="false"
+          ></textarea>
+          <mat-hint>Optional custom message body for alert notifications.</mat-hint>
+        </mat-form-field>
+      </div>
+
+      <div class="connector-boolean-fields">
+        <mat-checkbox formControlName="sendResolved">Send resolved notifications</mat-checkbox>
+        <p class="connector-boolean-hint">When enabled, Alertmanager sends notifications for resolved alerts too.</p>
+      </div>
+
+      <div class="summary-template-help" aria-label="Supported connector message variables">
+        <p class="summary-template-help__title">Available variables for message template:</p>
+        <div class="summary-template-help__list">
+          @for (variable of messageTemplateVariables; track variable.token) {
+            <div class="summary-template-help__item">
+              <code>{{ variable.token }}</code>
+              <span>{{ variable.description }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      @if (parseError()) {
+        <div class="form-error" role="status" aria-live="polite">{{ parseError() }}</div>
+      }
+
+      <div class="connector-examples">
+        <p class="connector-examples-title">Example values</p>
+        <ul class="connector-examples-list">
+          @for (example of smtpFieldExamples; track example.label) {
+            <li>
+              <span class="connector-example-label">{{ example.label }}:</span>
+              <code>{{ example.value }}</code>
+            </li>
+          }
+        </ul>
+      </div>
+    </form>
+  } @else if (isSlackConnector) {
+    <form [formGroup]="slackForm" (ngSubmit)="submit()" novalidate>
+      <mat-checkbox formControlName="enabled">Enabled</mat-checkbox>
+
+      <div class="smtp-grid">
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Webhook URL</mat-label>
+          <input matInput type="url" formControlName="webhookUrl" autocomplete="off" />
+          <mat-hint>Incoming webhook URL from Slack app (optional if Bot token is used).</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Bot token</mat-label>
+          <input matInput type="password" formControlName="botToken" autocomplete="new-password" />
+          <mat-hint>Add Slack token (for example `xoxb-...`) if webhook is not used.</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Default channel</mat-label>
+          <input matInput type="text" formControlName="defaultChannel" autocomplete="off" />
+          <mat-hint>Optional: `#alerts` or channel ID (future routing use).</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Bot display name</mat-label>
+          <input matInput type="text" formControlName="username" autocomplete="off" />
+          <mat-hint>Optional: visible sender name for webhook messages.</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field">
+          <mat-label>Repeat interval</mat-label>
+          <input matInput type="text" formControlName="repeatInterval" autocomplete="off" />
+          <mat-hint>Optional per-connector reminder interval (for example 15m, 1h, 90m).</mat-hint>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="field field--wide">
+          <mat-label>Message template</mat-label>
+          <textarea
+            matInput
+            rows="3"
+            formControlName="messageTemplate"
+            [placeholder]="messageTemplatePlaceholder"
+            spellcheck="false"
+          ></textarea>
+          <mat-hint>Optional custom message body for alert notifications.</mat-hint>
+        </mat-form-field>
+      </div>
+
+      <div class="connector-boolean-fields">
+        <mat-checkbox formControlName="sendResolved">Send resolved notifications</mat-checkbox>
+        <p class="connector-boolean-hint">When enabled, Alertmanager sends notifications for resolved alerts too.</p>
+      </div>
+
+      <div class="summary-template-help" aria-label="Supported connector message variables">
+        <p class="summary-template-help__title">Available variables for message template:</p>
+        <div class="summary-template-help__list">
+          @for (variable of messageTemplateVariables; track variable.token) {
+            <div class="summary-template-help__item">
+              <code>{{ variable.token }}</code>
+              <span>{{ variable.description }}</span>
+            </div>
+          }
+        </div>
+      </div>
+
+      @if (parseError()) {
+        <div class="form-error" role="status" aria-live="polite">{{ parseError() }}</div>
+      }
+
+      <div class="connector-examples">
+        <p class="connector-examples-title">Example values</p>
+        <ul class="connector-examples-list">
+          @for (example of slackFieldExamples; track example.label) {
+            <li>
+              <span class="connector-example-label">{{ example.label }}:</span>
+              <code>{{ example.value }}</code>
+            </li>
+          }
+        </ul>
+      </div>
+    </form>
+  } @else if (isDedicatedConnector) {
+    <form [formGroup]="dedicatedForm" (ngSubmit)="submit()" novalidate>
+      <mat-checkbox formControlName="enabled">Enabled</mat-checkbox>
+
+      <div class="smtp-grid">
+        @for (field of dedicatedInputFields; track field.control) {
+          <mat-form-field appearance="outline" class="field" [class.field--wide]="field.type === 'textarea'">
+            <mat-label>{{ field.label }}</mat-label>
+            @if (field.type === 'select') {
+              <mat-select [formControlName]="field.control">
+                @for (option of fieldSelectOptions(field); track option.value) {
+                  <mat-option [value]="option.value">{{ option.label }}</mat-option>
+                }
+              </mat-select>
+            } @else if (field.type === 'textarea') {
+              <textarea
+                matInput
+                rows="3"
+                [formControlName]="field.control"
+                spellcheck="false"
+                autocomplete="off"
+              ></textarea>
+            } @else {
+              <input
+                matInput
+                [type]="fieldInputType(field)"
+                [formControlName]="field.control"
+                [attr.inputmode]="fieldInputMode(field)"
+                autocomplete="off"
+              />
+            }
+            @if (field.hint) {
+              <mat-hint>{{ field.hint }}</mat-hint>
+            }
+            @if (fieldHasError(field, 'required')) {
+              <mat-error>{{ field.label }} is required.</mat-error>
+            } @else if (fieldHasError(field, 'maxlength')) {
+              <mat-error>{{ field.label }} is too long.</mat-error>
+            } @else if (field.type === 'number' && fieldHasError(field, 'pattern')) {
+              <mat-error>{{ field.label }} must be numeric.</mat-error>
+            }
+          </mat-form-field>
+        }
+      </div>
+
+      @if (dedicatedBooleanFields.length > 0) {
+        <div class="connector-boolean-fields">
+          @for (field of dedicatedBooleanFields; track field.control) {
+            <mat-checkbox [formControlName]="field.control">{{ field.label }}</mat-checkbox>
+            @if (field.hint) {
+              <p class="connector-boolean-hint">{{ field.hint }}</p>
+            }
+          }
+        </div>
+      }
+
+      @if (parseError()) {
+        <div class="form-error" role="status" aria-live="polite">{{ parseError() }}</div>
+      }
+
+      @if (hasDedicatedMessageTemplateField) {
+        <div class="summary-template-help" aria-label="Supported connector message variables">
+          <p class="summary-template-help__title">Available variables for message template:</p>
+          <div class="summary-template-help__list">
+            @for (variable of messageTemplateVariables; track variable.token) {
+              <div class="summary-template-help__item">
+                <code>{{ variable.token }}</code>
+                <span>{{ variable.description }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="connector-examples">
+        <p class="connector-examples-title">Example values</p>
+        <ul class="connector-examples-list">
+          @for (example of dedicatedFieldExamples; track example.label + example.value) {
+            <li>
+              <span class="connector-example-label">{{ example.label }}:</span>
+              <code>{{ example.value }}</code>
+            </li>
+          }
+        </ul>
+      </div>
+    </form>
+  } @else {
+    <form [formGroup]="jsonForm" (ngSubmit)="submit()" novalidate>
+      <mat-checkbox formControlName="enabled">Enabled</mat-checkbox>
+
+      <mat-form-field appearance="outline" class="field">
+        <mat-label>Configuration (JSON object)</mat-label>
+        <textarea matInput rows="12" formControlName="configText" spellcheck="false"></textarea>
+        <mat-hint>
+          Sensitive values are masked on read. Re-enter secrets when changing connector config.
+          URL fields are validated by backend security policy before Alertmanager apply.
+        </mat-hint>
+        @if (jsonForm.controls.configText.touched && jsonForm.controls.configText.hasError('required')) {
+          <mat-error>Configuration is required.</mat-error>
+        }
+        @if (parseError()) {
+          <mat-error>{{ parseError() }}</mat-error>
+        }
+      </mat-form-field>
+
+      <div class="connector-examples">
+        <p class="connector-examples-title">Example values</p>
+        <p class="connector-examples-fallback">
+          Use key/value examples from your connector provider docs and keep secrets in masked fields when unchanged.
+        </p>
+      </div>
+    </form>
+  }
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Cancel</button>
+  <button mat-flat-button color="primary" type="button" (click)="submit()">Save</button>
+</div>

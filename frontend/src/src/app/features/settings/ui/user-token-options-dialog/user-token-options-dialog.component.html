@@ -1,0 +1,28 @@
+<h2 mat-dialog-title>Generate service account token</h2>
+
+<div mat-dialog-content>
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <mat-form-field appearance="outline" class="field">
+      <mat-label>Token name (optional)</mat-label>
+      <input matInput type="text" formControlName="name" autocomplete="off" />
+      @if (form.controls.name.touched && form.controls.name.hasError('maxlength')) {
+        <mat-error>Token name must be at most 120 characters.</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="field">
+      <mat-label>Expires at (optional)</mat-label>
+      <input matInput type="datetime-local" formControlName="expiresAt" />
+      @if (expiresAtInvalid()) {
+        <mat-error>Invalid date-time value.</mat-error>
+      } @else if (expiresAtPast()) {
+        <mat-error>Expiry must be in the future.</mat-error>
+      }
+    </mat-form-field>
+  </form>
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Cancel</button>
+  <button mat-flat-button color="primary" type="button" (click)="submit()">Generate</button>
+</div>

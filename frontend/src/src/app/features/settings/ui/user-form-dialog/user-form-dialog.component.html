@@ -1,0 +1,81 @@
+<h2 mat-dialog-title>{{ data.title }}</h2>
+
+<div mat-dialog-content>
+  <form class="user-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <mat-form-field appearance="outline" class="field">
+      <mat-label>Email</mat-label>
+      <input matInput type="email" formControlName="email" autocomplete="off" />
+      @if (!isCreateMode) {
+        <mat-hint>Email is immutable after user creation.</mat-hint>
+      }
+      @if (form.controls.email.touched && form.controls.email.hasError('required')) {
+        <mat-error>Email is required.</mat-error>
+      } @else if (form.controls.email.touched && form.controls.email.hasError('email')) {
+        <mat-error>Enter a valid email address.</mat-error>
+      } @else if (form.controls.email.touched && form.controls.email.hasError('maxlength')) {
+        <mat-error>Email must be at most 120 characters.</mat-error>
+      }
+    </mat-form-field>
+
+    @if (isCreateMode) {
+      <mat-form-field appearance="outline" class="field">
+        <mat-label>Password</mat-label>
+        <input matInput type="password" formControlName="password" autocomplete="new-password" />
+        @if (form.controls.password.touched && form.controls.password.hasError('required')) {
+          <mat-error>Password is required.</mat-error>
+        } @else if (form.controls.password.touched && form.controls.password.hasError('minlength')) {
+          <mat-error>Password must be at least 12 characters.</mat-error>
+        } @else if (form.controls.password.touched && form.controls.password.hasError('maxlength')) {
+          <mat-error>Password must be at most 120 characters.</mat-error>
+        } @else if (form.controls.password.touched && form.controls.password.hasError('pattern')) {
+          <mat-error>Password must include uppercase, lowercase, digit and special character.</mat-error>
+        }
+      </mat-form-field>
+    }
+
+    <mat-form-field appearance="outline" class="field">
+      <mat-label>Nickname</mat-label>
+      <input matInput type="text" formControlName="nickname" autocomplete="off" />
+      @if (form.controls.nickname.touched && form.controls.nickname.hasError('required')) {
+        <mat-error>Nickname is required.</mat-error>
+      } @else if (form.controls.nickname.touched && form.controls.nickname.hasError('maxlength')) {
+        <mat-error>Nickname must be at most 64 characters.</mat-error>
+      }
+    </mat-form-field>
+
+    <div class="grid-row">
+      <mat-form-field appearance="outline" class="field">
+        <mat-label>Role</mat-label>
+        <mat-select formControlName="role">
+          @for (option of roleOptions; track option.value) {
+            <mat-option [value]="option.value">{{ option.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="field">
+        <mat-label>Account type</mat-label>
+        <mat-select formControlName="accountType">
+          @for (type of accountTypes; track type) {
+            <mat-option [value]="type">{{ type }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <mat-form-field appearance="outline" class="field">
+      <mat-label>Full name (optional)</mat-label>
+      <input matInput type="text" formControlName="fullName" autocomplete="off" />
+      @if (form.controls.fullName.touched && form.controls.fullName.hasError('maxlength')) {
+        <mat-error>Full name must be at most 120 characters.</mat-error>
+      }
+    </mat-form-field>
+  </form>
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Cancel</button>
+  <button mat-flat-button color="primary" type="button" (click)="submit()">
+    {{ data.confirmLabel }}
+  </button>
+</div>

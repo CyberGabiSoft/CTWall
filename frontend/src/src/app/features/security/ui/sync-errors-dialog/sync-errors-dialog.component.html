@@ -1,0 +1,35 @@
+<h2 mat-dialog-title>{{ title() }}</h2>
+
+<mat-dialog-content>
+  @if (status() === 'loading') {
+    <app-loading-indicator [message]="'Loading errors...'" [size]="28"></app-loading-indicator>
+  } @else if (status() === 'error') {
+    <div class="status-row error" role="status" aria-live="polite">Failed to load sync errors.</div>
+  } @else {
+    @if (rows().length === 0) {
+      <div class="status-row">No errors logged for this run.</div>
+    } @else {
+      <div class="errors-table" role="table" aria-label="Sync errors">
+        <div class="errors-header" role="row">
+          <div class="cell cell--time" role="columnheader">Time</div>
+          <div class="cell cell--stage" role="columnheader">Stage</div>
+          <div class="cell cell--item" role="columnheader">Item</div>
+          <div class="cell cell--message" role="columnheader">Message</div>
+        </div>
+        @for (row of rows(); track row.id) {
+          <div class="errors-row" role="row">
+            <div class="cell cell--time mono" role="cell">{{ row.time }}</div>
+            <div class="cell cell--stage" role="cell">{{ row.stage }}</div>
+            <div class="cell cell--item mono" role="cell">{{ row.item }}</div>
+            <div class="cell cell--message" role="cell">{{ row.message }}</div>
+          </div>
+        }
+      </div>
+    }
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="close()">Close</button>
+</mat-dialog-actions>
+

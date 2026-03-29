@@ -1,0 +1,109 @@
+name: ctwall
+
+services:
+  ctwall-postgres:
+    image: ${CTWALL_POSTGRES_IMAGE:-postgres:18}
+    container_name: ctwall-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
+      POSTGRES_USER: ${POSTGRES_USER:-appuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-postgres}
+    volumes:
+      - ctwall-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ctwall
+
+  ctwall-alertmanager:
+    image: ${CTWALL_ALERTMANAGER_IMAGE:-prom/alertmanager:v0.28.1}
+    container_name: ctwall-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=0.0.0.0:9093
+    volumes:
+      # Mount the whole directory (not a single file). Backend rewrites alertmanager.yml atomically,
+      # and file-level bind mounts can pin the old inode and miss updates.
+      - ./deploy/docker/backend-config:/etc/alertmanager:ro
+      - ctwall-alertmanager-data:/alertmanager
+    networks:
+      - ctwall
+
+  ctwall-initializer:
+    image: ${CTWALL_BACKEND_IMAGE:-docker.io/cybergabi/ctwall-backend:1.0.0}
+    container_name: ctwall-initializer
+    restart: "no"
+    depends_on:
+      ctwall-postgres:
+        condition: service_healthy
+    environment:
+      CTWALL_INIT_ONLY: "true"
+      DB_URL: ${DB_URL:-postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable}
+      CTWALL_SECRETS_PATH: /app/data/secrets.yaml
+    volumes:
+      - ./deploy/docker/backend-config:/app/config
+      - ctwall-backend-data:/app/data
+    networks:
+      - ctwall
+
+  ctwall-backend:
+    image: ${CTWALL_BACKEND_IMAGE:-docker.io/cybergabi/ctwall-backend:1.0.0}
+    container_name: ctwall-backend
+    restart: unless-stopped
+    depends_on:
+      ctwall-initializer:
+        condition: service_completed_successfully
+      ctwall-postgres:
+        condition: service_healthy
+      ctwall-alertmanager:
+        condition: service_started
+    environment:
+      DB_URL: ${DB_URL:-postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable}
+      CTWALL_SECRETS_PATH: /app/data/secrets.yaml
+      ALERTING_ALLOW_INSECURE_SMTP: ${ALERTING_ALLOW_INSECURE_SMTP:-false}
+      ALERTING_ALLOW_HTTP_TARGETS: ${ALERTING_ALLOW_HTTP_TARGETS:-false}
+      ALERTING_ALLOW_LOCALHOST_TARGETS: ${ALERTING_ALLOW_LOCALHOST_TARGETS:-false}
+    volumes:
+      - ./deploy/docker/backend-config:/app/config
+      - ctwall-backend-data:/app/data
+    ports:
+      - "${CTWALL_BACKEND_BIND_IP:-127.0.0.1}:${CTWALL_BACKEND_PORT:-8080}:8080"
+    networks:
+      - ctwall
+
+  ctwall-frontend:
+    image: ${CTWALL_FRONTEND_IMAGE:-docker.io/cybergabi/ctwall-frontend:1.0.0}
+    container_name: ctwall-frontend
+    restart: unless-stopped
+    depends_on:
+      - ctwall-backend
+    environment:
+      BACKEND_UPSTREAM: ${CTWALL_BACKEND_UPSTREAM:-http://ctwall-backend:8080}
+      FRONTEND_SSL_AUTO_GENERATE: ${FRONTEND_SSL_AUTO_GENERATE:-true}
+      FRONTEND_SSL_CERT_PATH: ${FRONTEND_SSL_CERT_PATH:-/etc/nginx/certs/tls.crt}
+      FRONTEND_SSL_KEY_PATH: ${FRONTEND_SSL_KEY_PATH:-/etc/nginx/certs/tls.key}
+      FRONTEND_SSL_SELF_SIGNED_CN: ${FRONTEND_SSL_SELF_SIGNED_CN:-localhost}
+      FRONTEND_SSL_SELF_SIGNED_DAYS: ${FRONTEND_SSL_SELF_SIGNED_DAYS:-365}
+    volumes:
+      - ctwall-frontend-tls:/etc/nginx/certs
+    ports:
+      - "${CTWALL_FRONTEND_BIND_IP:-127.0.0.1}:${CTWALL_FRONTEND_HTTPS_PORT:-8443}:443"
+    networks:
+      - ctwall
+
+volumes:
+  ctwall-postgres-data:
+  ctwall-alertmanager-data:
+  ctwall-backend-data:
+  ctwall-frontend-tls:
+
+networks:
+  ctwall:
+    name: ctwall

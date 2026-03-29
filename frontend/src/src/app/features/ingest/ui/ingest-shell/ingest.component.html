@@ -1,0 +1,209 @@
+<section class="ingest-view">
+  <div class="ingest-header ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="ctw-shell-copy">
+      <h2 class="ctw-shell-title">Import</h2>
+      <p class="ctw-shell-subtitle">Upload a vendor SBOM (`bom.json`) and create a new Test revision.</p>
+    </div>
+    <div class="header-meta ctw-shell-meta-block">
+      <span>Requires Writer access.</span>
+      <span>Max file size 50 MB.</span>
+    </div>
+  </div>
+
+  <mat-card class="ingest-card ctw-panel ctw-panel--elevated">
+    <mat-card-content>
+      @if (!canWrite()) {
+        <div class="status-callout warning" role="alert">
+          You have read-only access. Manual ingestion requires Writer or Admin role.
+        </div>
+      }
+
+      @if (productsStatus() === 'loading') {
+        <app-loading-indicator [message]="'Loading products...'" [size]="28"></app-loading-indicator>
+      } @else if (productsStatus() === 'error') {
+        <div class="status-callout error" role="alert">{{ productsError() }}</div>
+      }
+
+      <form class="ingest-form" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
+        <div class="form-section">
+          <div class="section-header">
+            <h3>Target</h3>
+            <p>Select product and scope, then choose to create a new test or use an existing one.</p>
+          </div>
+          <div class="form-grid">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact ingest-target-field ingest-target-field--select">
+              <mat-label>Product</mat-label>
+              <mat-select formControlName="productId">
+                @for (product of products(); track product.id) {
+                  <mat-option [value]="product.id">{{ product.name }}</mat-option>
+                }
+              </mat-select>
+              @if (form.controls.productId.touched && form.controls.productId.invalid) {
+                <mat-error>Product selection is required.</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact ingest-target-field ingest-target-field--select">
+              <mat-label>Scope</mat-label>
+              <mat-select formControlName="scopeId">
+                @if (scopesStatus() === 'loading') {
+                  <mat-option disabled>
+                    <app-loading-indicator [message]="'Loading scopes...'" [compact]="true" [size]="20"></app-loading-indicator>
+                  </mat-option>
+                }
+                @for (scope of scopes(); track scope.id) {
+                  <mat-option [value]="scope.id">{{ scope.name }}</mat-option>
+                }
+              </mat-select>
+              @if (form.controls.scopeId.touched && form.controls.scopeId.invalid) {
+                <mat-error>Scope selection is required.</mat-error>
+              }
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact ingest-target-field ingest-target-field--select">
+              <mat-label>Test mode</mat-label>
+              <mat-select formControlName="testMode">
+                <mat-option value="new">New test</mat-option>
+                <mat-option value="existing">Existing test</mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            @if (form.controls.testMode.value === 'new') {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact ingest-target-field ingest-target-field--input">
+                <mat-label>Test name</mat-label>
+                <input matInput formControlName="testName" [maxlength]="120" />
+                <mat-hint align="end">{{ testNameCount() }}/120</mat-hint>
+                @if (form.controls.testName.touched && form.controls.testName.hasError('required')) {
+                  <mat-error>Test name is required.</mat-error>
+                } @else if (form.controls.testName.touched && form.controls.testName.hasError('maxLength')) {
+                  <mat-error>Test name must be 120 characters or less.</mat-error>
+                } @else if (form.controls.testName.touched && form.controls.testName.hasError('controlChars')) {
+                  <mat-error>Test name cannot contain control characters.</mat-error>
+                }
+              </mat-form-field>
+            } @else {
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact ingest-target-field ingest-target-field--select">
+                <mat-label>Existing test</mat-label>
+                <mat-select formControlName="testId">
+                  @if (testsStatus() === 'loading') {
+                    <mat-option disabled>
+                      <app-loading-indicator [message]="'Loading tests...'" [compact]="true" [size]="20"></app-loading-indicator>
+                    </mat-option>
+                  }
+                  @for (test of tests(); track test.id) {
+                    <mat-option [value]="test.id">{{ test.name }}</mat-option>
+                  }
+                </mat-select>
+                @if (form.controls.testId.touched && !form.controls.testId.value.trim()) {
+                  <mat-error>Existing test selection is required.</mat-error>
+                }
+              </mat-form-field>
+            }
+          </div>
+          @if (testsStatus() === 'error') {
+            <div class="status-callout error" role="alert">{{ testsError() }}</div>
+          }
+        </div>
+
+        <div class="form-section">
+          <div class="section-header">
+            <h3>SBOM file</h3>
+            <p>Drag &amp; drop or browse a JSON SBOM file.</p>
+          </div>
+          <div class="supported-sbom-types" role="note" aria-label="Supported SBOM standards">
+            <span class="supported-sbom-types__label">Supported standards:</span>
+            <span class="supported-sbom-types__chip">CycloneDX</span>
+            <span class="supported-sbom-types__chip">SPDX</span>
+            <span class="supported-sbom-types__chip">SWID</span>
+          </div>
+          <div
+            class="dropzone"
+            [class.dragging]="isDragging()"
+            role="button"
+            tabindex="0"
+            (click)="fileInput.click()"
+            (keydown.enter)="fileInput.click()"
+            (keydown.space)="fileInput.click()"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave()"
+            (drop)="onFileDropped($event)"
+            aria-label="Upload SBOM file"
+          >
+            <input
+              #fileInput
+              class="file-input"
+              type="file"
+              accept=".json,application/json"
+              (change)="onFileSelected($event)"
+            />
+            <div class="dropzone-content">
+              <div class="dropzone-icon" aria-hidden="true">
+                <lucide-icon [img]="Upload" aria-hidden="true"></lucide-icon>
+              </div>
+              <div class="dropzone-text">
+                <strong>Drop `bom.json` here</strong>
+                <span>or click to choose a file</span>
+              </div>
+            </div>
+          </div>
+
+          @if (isParsing()) {
+            <app-loading-indicator [message]="'Parsing SBOM...'" [size]="28"></app-loading-indicator>
+          }
+
+          @if (parseError()) {
+            <div class="status-callout error" role="alert">{{ parseError() }}</div>
+          }
+
+          @if (fileState()) {
+            <div class="file-summary ctw-panel ctw-panel--compact">
+              <div>
+                <div class="file-name">{{ fileState()?.name }}</div>
+                <div class="file-meta">{{ fileState()?.sizeLabel }}</div>
+              </div>
+              <div class="file-status success" role="status" aria-live="polite">
+                <lucide-icon [img]="Check" aria-hidden="true"></lucide-icon>
+                <span>Validated</span>
+              </div>
+              <button mat-stroked-button type="button" (click)="clearFile()">Remove</button>
+            </div>
+          }
+        </div>
+
+        @if (uploadStatus() === 'uploading') {
+          <app-loading-indicator [message]="'Uploading SBOM...'" [size]="28"></app-loading-indicator>
+        }
+
+        @if (uploadError()) {
+          <div class="status-callout error" role="alert">{{ uploadError() }}</div>
+        }
+
+        @if (uploadStatus() === 'success' && uploadResult()) {
+          <div class="status-callout success upload-success-callout" role="status" aria-live="polite">
+            <div class="success-content">
+              <lucide-icon [img]="Check" aria-hidden="true"></lucide-icon>
+              <div>
+                <strong>Upload completed.</strong>
+                <div class="success-meta">
+                  Revision ID: {{ uploadResult()?.revisionId }}
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+
+        <div class="form-actions">
+          <button mat-stroked-button type="button" (click)="resetForm()">Reset</button>
+          <button
+            mat-flat-button
+            color="primary"
+            type="submit"
+            [disabled]="!canSubmit()"
+          >
+            {{ uploadStatus() === 'uploading' ? 'Uploading...' : 'Upload SBOM' }}
+          </button>
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+</section>

@@ -1,0 +1,65 @@
+backend:
+  enabled: true
+
+  # Unified Helm chart runs PostgreSQL via bitnami/postgresql dependency.
+  # Keep backend in-chart PostgreSQL disabled in this top-level chart.
+  config:
+    database:
+      url: 'postgres://{{ .Values.global.postgresql.auth.username }}:{{ .Values.global.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.global.postgresql.auth.database }}?sslmode=disable'
+  env:
+    DB_URL: 'postgres://{{ .Values.global.postgresql.auth.username }}:{{ .Values.global.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.global.postgresql.auth.database }}?sslmode=disable'
+
+  image:
+    repository: docker.io/cybergabi/ctwall-backend
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+  # Set to false to use external PostgreSQL.
+  # In external DB mode override BOTH:
+  # - backend.env.DB_URL
+  # - backend.config.database.url
+  postgresql:
+    enabled: false
+
+frontend:
+  enabled: true
+
+  image:
+    repository: docker.io/cybergabi/ctwall-frontend
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+
+  env:
+    BACKEND_UPSTREAM: "http://{{ .Release.Name }}-backend:8080"
+    # Helm deploys TLS via Kubernetes Secret; runtime cert auto-generation in pod should stay disabled.
+    FRONTEND_SSL_AUTO_GENERATE: "false"
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    backendServicePortName: "https"
+    hosts:
+      - host: ctwall-frontend.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+global:
+  postgresql:
+    auth:
+      username: appuser
+      password: change-me-postgres
+      database: appdb
+
+postgresql:
+  enabled: true
+  auth:
+    username: appuser
+    password: change-me-postgres
+    database: appdb
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi

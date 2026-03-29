@@ -1,0 +1,131 @@
+.field {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.field--wide {
+  grid-column: span 2;
+}
+
+.smtp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 12px;
+  margin-top: 10px;
+}
+
+.form-error {
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--ctw-danger-text) 30%, transparent);
+  color: var(--ctw-danger-text);
+  background: var(--ctw-danger-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.connector-boolean-fields {
+  display: grid;
+  gap: 4px 0;
+  margin-top: 6px;
+}
+
+.connector-boolean-hint {
+  margin: -2px 0 0 32px;
+  color: var(--ctw-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.connector-examples {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--ctw-text-muted) 28%, transparent);
+  background: color-mix(in srgb, var(--ctw-text-muted) 8%, transparent);
+}
+
+.connector-examples-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.connector-examples-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.connector-examples-list code {
+  word-break: break-all;
+}
+
+.connector-example-label {
+  font-weight: 600;
+}
+
+.connector-examples-fallback {
+  margin: 0;
+  color: var(--ctw-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.summary-template-help {
+  margin-top: 10px;
+}
+
+.summary-template-help__title {
+  margin: 0 0 6px;
+  color: var(--ctw-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.summary-template-help__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.summary-template-help__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ctw-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.summary-template-help__item code {
+  font-family: var(--ctw-font-mono);
+  color: var(--ctw-text);
+  background: color-mix(in oklab, var(--ctw-surface-muted) 72%, var(--ctw-primary) 28%);
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+mat-dialog-content {
+  min-width: min(660px, 94vw);
+  padding-top: 14px;
+}
+
+@media (max-width: 860px) {
+  .field--wide {
+    grid-column: auto;
+  }
+
+  .smtp-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .summary-template-help__list {
+    grid-template-columns: 1fr;
+  }
+}

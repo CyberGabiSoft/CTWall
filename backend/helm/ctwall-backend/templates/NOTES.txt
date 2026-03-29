@@ -1,0 +1,16 @@
+CTWall backend has been deployed.
+
+1. Check release resources:
+   kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Port-forward backend service:
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "ctwall-backend.fullname" . }} 8080:{{ .Values.service.port }}
+
+3. Open API docs:
+   http://127.0.0.1:8080/docs
+
+4. Runtime notes:
+   - Ensure PostgreSQL schema migrations are applied before production traffic.
+   - Backend uses /app/config/config.yaml as runtime config (created on first run from /app/config.template.yaml when missing).
+   - On first run backend generates missing runtime secrets (JWT + app-encryption passphrase/salt + alertmanager creds) and stores them in /app/config/secrets.yaml.
+   - Internal Alertmanager config is rendered at /app/config/alertmanager.yml.

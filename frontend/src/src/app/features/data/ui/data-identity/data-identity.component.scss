@@ -1,0 +1,195 @@
+.identity-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.identity-header-card,
+.identity-card {
+  overflow: hidden;
+}
+
+.identity-header,
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.identity-header h3,
+.card-header h4 {
+  margin: 0;
+}
+
+.section-title-block {
+  min-width: 0;
+}
+
+.identity-header h3 {
+  font-size: 1.5rem;
+  letter-spacing: 0.01em;
+}
+
+.card-header h4 {
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+}
+
+.section-subtitle {
+  margin: 8px 0 0;
+  color: var(--ctw-muted);
+  max-width: 78ch;
+  line-height: 1.42;
+  font-size: 0.95rem;
+}
+
+.group-context-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.group-context-role {
+  color: var(--ctw-text);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.identity-view :is(button[mat-stroked-button], button[mat-flat-button]) {
+  text-transform: none;
+}
+
+.identity-primary-btn,
+.identity-secondary-btn,
+.identity-refresh-btn,
+.group-open-btn,
+.member-action-btn {
+  min-height: 38px;
+  border-radius: 999px;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-open-btn.active {
+  border-color: var(--ctw-primary);
+  background: color-mix(in srgb, var(--ctw-primary) 12%, transparent);
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.member-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid color-mix(in srgb, var(--ctw-border) 78%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ctw-surface-muted) 72%, transparent),
+    color-mix(in srgb, var(--ctw-surface-muted) 48%, transparent)
+  );
+}
+
+.member-controls-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  grid-template-columns: minmax(320px, 1fr) 170px auto;
+}
+
+.member-controls-row--project {
+  grid-template-columns: minmax(320px, 1fr) 170px auto auto;
+}
+
+.member-user-field {
+  min-width: 0;
+  width: 100%;
+}
+
+.member-role-field {
+  width: 100%;
+}
+
+.inline-hint {
+  color: var(--ctw-muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.member-action-btn.danger {
+  border-color: color-mix(in srgb, var(--ctw-danger-border) 70%, transparent);
+  color: var(--ctw-danger-text);
+}
+
+.member-action-btn.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ctw-danger-bg) 65%, transparent);
+}
+
+.role-select-inline {
+  width: 140px;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-weight: 700;
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+}
+
+.role-pill--owner {
+  background: var(--ctw-info-bg);
+  color: var(--ctw-info-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-info-text) 30%, transparent);
+}
+
+.role-pill--editor {
+  background: var(--ctw-success-bg);
+  color: var(--ctw-success-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-success-text) 30%, transparent);
+}
+
+.role-pill--viewer {
+  background: color-mix(in srgb, var(--ctw-muted) 22%, transparent);
+  color: var(--ctw-muted);
+  border: 1px solid color-mix(in srgb, var(--ctw-muted) 30%, transparent);
+}
+
+.row-action-icon.danger {
+  color: var(--ctw-danger-text);
+}
+
+@media (max-width: 980px) {
+  .identity-header,
+  .card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .header-actions :is(.identity-primary-btn, .identity-secondary-btn) {
+    flex: 1 1 auto;
+  }
+
+  .member-controls-row,
+  .member-controls-row--project {
+    grid-template-columns: 1fr;
+  }
+}

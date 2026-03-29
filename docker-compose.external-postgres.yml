@@ -1,0 +1,22 @@
+services:
+  # External-DB mode: disable bundled PostgreSQL from default startup set.
+  ctwall-postgres:
+    profiles:
+      - internal-postgres
+
+  # In external-DB mode backend should not wait for bundled PostgreSQL.
+  ctwall-initializer:
+    depends_on:
+      ctwall-postgres:
+        condition: service_healthy
+        required: false
+
+  ctwall-backend:
+    depends_on:
+      ctwall-initializer:
+        condition: service_completed_successfully
+      ctwall-alertmanager:
+        condition: service_started
+      ctwall-postgres:
+        condition: service_healthy
+        required: false

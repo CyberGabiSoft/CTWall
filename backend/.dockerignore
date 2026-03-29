@@ -1,0 +1,6 @@
+# Keep backend image build context minimal.
+*
+!Dockerfile
+!.dockerignore
+!config.yaml
+!src/**

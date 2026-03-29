@@ -1,0 +1,120 @@
+replicaCount: 1
+
+image:
+  repository: docker.io/cybergabi/ctwall-frontend
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  automount: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 101
+  runAsGroup: 101
+  fsGroup: 101
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 443
+  targetPort: 443
+  httpEnabled: false
+  httpPort: 80
+  httpTargetPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  backendServicePortName: "https"
+  hosts:
+    - host: ctwall-frontend.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 4000m
+    memory: 2048Mi
+
+probes:
+  startup:
+    enabled: true
+    httpGetPath: /
+    httpGetPort: https
+    httpGetScheme: HTTPS
+    periodSeconds: 5
+    failureThreshold: 30
+  liveness:
+    enabled: true
+    httpGetPath: /
+    httpGetPort: https
+    httpGetScheme: HTTPS
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 6
+  readiness:
+    enabled: true
+    httpGetPath: /
+    httpGetPort: https
+    httpGetScheme: HTTPS
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 6
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+env:
+  BACKEND_UPSTREAM: "http://ctwall-backend:8080"
+  FRONTEND_HTTP_PORT: "8080"
+  FRONTEND_SSL_PORT: "443"
+  FRONTEND_SSL_CERT_PATH: "/etc/nginx/certs/tls.crt"
+  FRONTEND_SSL_KEY_PATH: "/etc/nginx/certs/tls.key"
+  # For Kubernetes/Helm keep TLS material in Secret and do not generate runtime certs in pod.
+  FRONTEND_SSL_AUTO_GENERATE: "false"
+  FRONTEND_SSL_SELF_SIGNED_CN: "localhost"
+  FRONTEND_SSL_SELF_SIGNED_DAYS: "365"
+
+tls:
+  existingSecret: "ctwall-frontend-tls"
+  mountPath: "/etc/nginx/certs"
+
+extraEnv: []
+extraEnvFrom: []

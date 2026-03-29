@@ -1,0 +1,492 @@
+<div class="layout-container">
+  <mat-toolbar class="top-header" color="primary">
+    <div class="header-left">
+      <a class="brand-link" routerLink="/dashboard" aria-label="CTWall home">
+        <img
+          ngSrc="/assets/brand/logo_ct_wall_2_256.png"
+          width="34"
+          height="34"
+          alt="CTWall"
+          class="brand-logo"
+          priority
+        />
+        <span class="brand-name">CTWALL</span>
+      </a>
+      <div class="project-switcher" role="group" aria-label="Project selector">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="project-select-field">
+          <mat-label>Project</mat-label>
+          <mat-select
+            [value]="selectedProjectId()"
+            [disabled]="projectLoading() || availableProjects().length === 0"
+            aria-label="Active project"
+            (selectionChange)="onProjectSelected($event.value)"
+          >
+            @for (project of availableProjects(); track project.id) {
+              <mat-option [value]="project.id">{{ project.name }}</mat-option>
+            }
+            @if (availableProjects().length === 0) {
+              <mat-option [value]="null" disabled>No projects</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        @if (canManageProjects()) {
+          <button
+            mat-stroked-button
+            type="button"
+            class="project-manage-btn"
+            (click)="openManageProjects()"
+            aria-label="Manage projects"
+            matTooltip="Manage projects"
+            matTooltipPosition="below"
+          >
+            <lucide-icon
+              [img]="Folder"
+              class="project-manage-icon"
+              aria-hidden="true"
+            ></lucide-icon>
+          </button>
+        }
+      </div>
+    </div>
+    <div class="header-search" role="search" aria-label="Global component search">
+      <div class="search-input-wrap">
+        <input
+          class="search-input"
+          type="search"
+          placeholder="Search by package PURL (contains)"
+          [value]="searchQuery()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="submitSearch()"
+          aria-label="Search by package PURL"
+        />
+        @if (searchQuery().trim().length > 0) {
+          <button
+            type="button"
+            class="search-clear"
+            (click)="clearSearch()"
+            aria-label="Clear search"
+            matTooltip="Clear search"
+            matTooltipPosition="below"
+          >
+            <lucide-icon [img]="X" aria-hidden="true"></lucide-icon>
+          </button>
+        }
+      </div>
+      <button
+        mat-stroked-button
+        type="button"
+        class="search-submit"
+        (click)="submitSearch()"
+        [disabled]="!canSubmitSearch()"
+        aria-label="Search"
+        matTooltip="Search"
+        matTooltipPosition="below"
+      >
+        <lucide-icon [img]="Search" aria-hidden="true"></lucide-icon>
+      </button>
+    </div>
+    <div class="header-right">
+      <button
+        mat-stroked-button
+        type="button"
+        class="events-button"
+        [class.events-button--zero]="openEventsCount() === 0"
+        [class.events-button--has-open]="(openEventsCount() ?? 0) > 0"
+        (click)="openEvents()"
+        aria-label="Open Events"
+        matTooltip="Events"
+        matTooltipPosition="below"
+        [matBadge]="openEventsBadge() ?? ''"
+        matBadgeSize="large"
+        matBadgePosition="below after"
+        [matBadgeOverlap]="true"
+        [matBadgeHidden]="openEventsBadge() === null"
+      >
+        <div class="btn-content-wrapper">
+          <lucide-icon [img]="TriangleAlert" class="events-icon" aria-hidden="true"></lucide-icon>
+        </div>
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        class="theme-toggle"
+        (click)="toggleTheme()"
+        [attr.aria-label]="themeToggleLabel()"
+        [matTooltip]="themeToggleLabel()"
+        matTooltipPosition="below"
+      >
+        <div class="btn-content-wrapper">
+          @if (isDarkTheme()) {
+            <lucide-icon [img]="Sun" class="theme-icon"></lucide-icon>
+          } @else {
+            <lucide-icon [img]="Moon" class="theme-icon"></lucide-icon>
+          }
+        </div>
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        class="account-button"
+        [matMenuTriggerFor]="accountMenu"
+        aria-label="Account menu"
+      >
+        <div class="btn-content-wrapper">
+          <lucide-icon [img]="User" class="account-icon"></lucide-icon>
+          <span class="btn-text">Account</span>
+        </div>
+      </button>
+      <mat-menu
+        #accountMenu="matMenu"
+        xPosition="after"
+        [overlapTrigger]="false"
+        class="account-menu-panel"
+      >
+        <button mat-menu-item type="button" (click)="openChangePassword()">Change password</button>
+        <button mat-menu-item type="button" (click)="onLogout()">Logout</button>
+      </mat-menu>
+    </div>
+  </mat-toolbar>
+
+  <div class="content-wrapper" [class.collapsed]="!isSidebarExpanded()">
+    <aside
+      class="sidebar"
+      id="primary-sidebar"
+      [class.collapsed]="!isSidebarExpanded()"
+      [style.width.px]="isSidebarExpanded() ? 240 : 56"
+      [style.minWidth.px]="isSidebarExpanded() ? 240 : 56"
+      [style.maxWidth.px]="isSidebarExpanded() ? 240 : 56"
+    >
+      <nav class="sidebar-nav" aria-label="Primary navigation">
+        <ul>
+          <li>
+            <a
+              routerLink="/dashboard"
+              routerLinkActive="active"
+              [routerLinkActiveOptions]="{
+                paths: 'subset',
+                queryParams: 'ignored',
+                matrixParams: 'ignored',
+                fragment: 'ignored'
+              }"
+              class="nav-item-dashboard"
+              matTooltip="Dashboard"
+              matTooltipPosition="right"
+              [matTooltipDisabled]="isSidebarExpanded()"
+            >
+              <span class="icon">
+                <lucide-icon
+                  [img]="LayoutDashboard"
+                  class="nav-icon"
+                  aria-hidden="true"
+                ></lucide-icon>
+              </span>
+              <span class="label">Dashboard</span>
+            </a>
+          </li>
+          <li class="nav-group">
+            <a
+              (click)="toggleDataMenu($event)"
+              (keydown.enter)="toggleDataMenu($event)"
+              (keydown.space)="toggleDataMenu($event)"
+              class="nav-item-data"
+              [class.active]="isDataSectionActive()"
+              role="button"
+              tabindex="0"
+              matTooltip="Data"
+              matTooltipPosition="right"
+              [matTooltipDisabled]="isSidebarExpanded()"
+            >
+              <span class="icon">
+                <lucide-icon [img]="Database" class="nav-icon" aria-hidden="true"></lucide-icon>
+              </span>
+              <span class="label">Data</span>
+            </a>
+            <div class="submenu-wrapper" [class.expanded]="isSidebarExpanded() && isDataExpanded()">
+              <ul class="nav-submenu">
+                <li>
+                  <a
+                    routerLink="/data"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'exact',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="List" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Browse</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    routerLink="/data/import"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Upload" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Import</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    routerLink="/data/graph"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Activity" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Graph</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    routerLink="/data/user-groups"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Users" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>User Groups</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          <li class="nav-group">
+            <a
+              (click)="toggleSecurityMenu($event)"
+              (keydown.enter)="toggleSecurityMenu($event)"
+              (keydown.space)="toggleSecurityMenu($event)"
+              class="nav-item-security"
+              [class.active]="isSecuritySectionActive()"
+              role="button"
+              tabindex="0"
+              matTooltip="Security"
+              matTooltipPosition="right"
+              [matTooltipDisabled]="isSidebarExpanded()"
+            >
+              <span class="icon">
+                <lucide-icon [img]="ShieldCheck" class="nav-icon" aria-hidden="true"></lucide-icon>
+              </span>
+              <span class="label">Security</span>
+            </a>
+            <div
+              class="submenu-wrapper"
+              [class.expanded]="isSidebarExpanded() && isSecurityExpanded()"
+            >
+              <ul class="nav-submenu">
+                <li>
+                  <a
+                    routerLink="/security/posture"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Activity" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Posture</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    routerLink="/security/explorer"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Bug" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Explorer</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    routerLink="/security/sources"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Share2" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Sources</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    routerLink="/security/alerts"
+                    routerLinkActive="active"
+                    [routerLinkActiveOptions]="{
+                      paths: 'subset',
+                      queryParams: 'ignored',
+                      matrixParams: 'ignored',
+                      fragment: 'ignored'
+                    }"
+                  >
+                    <span class="sub-icon" aria-hidden="true">
+                      <lucide-icon [img]="Bell" aria-hidden="true"></lucide-icon>
+                    </span>
+                    <span>Alerts</span>
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </li>
+          @if (canAccessSettings()) {
+            <li class="nav-group">
+              <a
+                class="nav-item-settings"
+                (click)="toggleSettingsMenu($event)"
+                (keydown.enter)="toggleSettingsMenu($event)"
+                (keydown.space)="toggleSettingsMenu($event)"
+                [class.active]="isSettingsSectionActive()"
+                role="button"
+                tabindex="0"
+                matTooltip="Settings"
+                matTooltipPosition="right"
+                [matTooltipDisabled]="isSidebarExpanded()"
+              >
+                <span class="icon">
+                  <lucide-icon [img]="Settings" class="nav-icon" aria-hidden="true"></lucide-icon>
+                </span>
+                <span class="label">Settings</span>
+              </a>
+              <div
+                class="submenu-wrapper"
+                [class.expanded]="isSidebarExpanded() && isSettingsExpanded()"
+              >
+                <ul class="nav-submenu">
+                  <li>
+                    <a
+                      routerLink="/admin/settings/general"
+                      routerLinkActive="active"
+                      [routerLinkActiveOptions]="{
+                        paths: 'subset',
+                        queryParams: 'ignored',
+                        matrixParams: 'ignored',
+                        fragment: 'ignored'
+                      }"
+                    >
+                      <span class="sub-icon" aria-hidden="true">
+                        <lucide-icon [img]="List" aria-hidden="true"></lucide-icon>
+                      </span>
+                      <span>General</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      routerLink="/admin/settings/connectors"
+                      routerLinkActive="active"
+                      [routerLinkActiveOptions]="{
+                        paths: 'subset',
+                        queryParams: 'ignored',
+                        matrixParams: 'ignored',
+                        fragment: 'ignored'
+                      }"
+                    >
+                      <span class="sub-icon" aria-hidden="true">
+                        <lucide-icon [img]="Share2" aria-hidden="true"></lucide-icon>
+                      </span>
+                      <span>Connectors</span>
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      routerLink="/admin/settings/users"
+                      routerLinkActive="active"
+                      [routerLinkActiveOptions]="{
+                        paths: 'subset',
+                        queryParams: 'ignored',
+                        matrixParams: 'ignored',
+                        fragment: 'ignored'
+                      }"
+                    >
+                      <span class="sub-icon" aria-hidden="true">
+                        <lucide-icon [img]="User" aria-hidden="true"></lucide-icon>
+                      </span>
+                      <span>Users</span>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </li>
+          }
+        </ul>
+      </nav>
+
+      <button
+        type="button"
+        class="sidebar-toggle"
+        (click)="toggleSidebar()"
+        [attr.aria-expanded]="isSidebarExpanded()"
+        aria-controls="primary-sidebar"
+        aria-label="Toggle sidebar"
+        [matTooltip]="isSidebarExpanded() ? 'Collapse menu' : 'Expand menu'"
+        matTooltipPosition="right"
+      >
+        @if (isSidebarExpanded()) {
+          <lucide-icon [img]="ChevronLeft" class="nav-icon" aria-hidden="true"></lucide-icon>
+        } @else {
+          <lucide-icon [img]="ChevronRight" class="nav-icon" aria-hidden="true"></lucide-icon>
+        }
+        <span class="toggle-label">Collapse menu</span>
+      </button>
+    </aside>
+
+    <div class="page-container">
+      <app-error-banner></app-error-banner>
+      <main class="main-content">
+        <div class="main-content-inner">
+          <div class="route-content">
+            <router-outlet></router-outlet>
+          </div>
+          <footer class="app-footer" aria-label="Copyright">
+            @if (appVersion()) {
+              <span class="app-footer-version">Version {{ appVersion() }}</span>
+            }
+            <span class="app-footer-copyright">
+              <lucide-icon [img]="Copyright" class="app-footer-icon" aria-hidden="true"></lucide-icon>
+              <span>2026 CyberGabi</span>
+            </span>
+          </footer>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,78 @@
+.meta-card {
+  margin-bottom: 12px;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+}
+
+.meta-item {
+  min-width: 0;
+}
+
+.meta-label {
+  color: var(--ctw-muted);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.meta-value {
+  overflow-wrap: anywhere;
+}
+
+.occurrences-section {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.occurrences-section h3 {
+  margin: 0;
+}
+
+.occ-card {
+  background: var(--ctw-surface);
+}
+
+.occ-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.occ-badges {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  border: 1px solid var(--ctw-border);
+  background: var(--ctw-surface-2);
+}
+
+@media (max-width: 900px) {
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+  .occ-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+

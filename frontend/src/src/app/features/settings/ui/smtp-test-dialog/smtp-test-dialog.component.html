@@ -1,0 +1,23 @@
+<h2 mat-dialog-title>SMTP test message</h2>
+
+<div mat-dialog-content>
+  <p class="dialog-hint">Provide recipient email for the test message.</p>
+  <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <mat-form-field appearance="outline" class="field">
+      <mat-label>Recipient email</mat-label>
+      <input matInput type="email" formControlName="toEmail" autocomplete="email" />
+      @if (form.controls.toEmail.touched && form.controls.toEmail.hasError('required')) {
+        <mat-error>Recipient email is required.</mat-error>
+      } @else if (form.controls.toEmail.touched && form.controls.toEmail.hasError('email')) {
+        <mat-error>Enter a valid email address.</mat-error>
+      } @else if (form.controls.toEmail.touched && form.controls.toEmail.hasError('maxlength')) {
+        <mat-error>Email must be at most 254 characters.</mat-error>
+      }
+    </mat-form-field>
+  </form>
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-stroked-button type="button" (click)="cancel()">Cancel</button>
+  <button mat-flat-button color="primary" type="button" (click)="submit()">Send test</button>
+</div>

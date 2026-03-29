@@ -1,0 +1,41 @@
+# Monorepo root ignore (frontend + backend + local deploy artifacts)
+
+# Sensitive cert/key artifacts
+*.key
+*.p12
+*.jks
+*.csr
+
+# Local docker/deploy configuration overrides
+/deploy/docker/.env
+/deploy/docker/backend-config/secrets.yaml
+
+# Local TLS material generated for dev runs
+/tls/*
+!/tls/.gitkeep
+
+# Frontend build/cache artifacts
+/frontend/src/node_modules/
+/frontend/src/dist/
+/frontend/src/coverage/
+/frontend/src/.angular/
+
+# Frontend local editor/cache extras
+/frontend/src/.vscode/
+/frontend/src/.history/
+/frontend/src/.sass-cache/
+
+# Backend local artifacts
+/backend/server
+/backend/*.out
+/backend/*.log
+/backend/coverage.out
+/backend/test.log
+/backend/src/.bin/
+
+# Python cache from helper scripts
+/manual-test-scripts/__pycache__/
+
+# OS/editor noise at repo root
+.DS_Store
+Thumbs.db

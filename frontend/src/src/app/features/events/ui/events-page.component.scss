@@ -1,0 +1,129 @@
+.events-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.events-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.events-header p {
+  margin: 0;
+  color: var(--ctw-muted);
+}
+
+.header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.options-btn lucide-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+}
+
+.options-btn lucide-icon ::ng-deep svg {
+  width: 18px;
+  height: 18px;
+}
+
+.options-panel {
+  margin: 10px 0 14px;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.options-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.category-field {
+  width: 100%;
+}
+
+.hint {
+  color: var(--ctw-muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.options-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.open-btn {
+  border-radius: 999px;
+}
+
+.sev,
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sev--error {
+  background: var(--ctw-danger-soft);
+  color: var(--ctw-danger-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-danger-text) 30%, transparent);
+}
+
+.sev--warn {
+  background: var(--ctw-warning-soft);
+  color: var(--ctw-warning-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-warning-text) 30%, transparent);
+}
+
+.sev--info {
+  background: var(--ctw-info-soft);
+  color: var(--ctw-info-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-info-text) 30%, transparent);
+}
+
+.status--open {
+  background: var(--ctw-warning-soft);
+  color: var(--ctw-warning-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-warning-text) 30%, transparent);
+}
+
+.status--ack {
+  background: var(--ctw-success-soft);
+  color: var(--ctw-success-text);
+  border: 1px solid color-mix(in srgb, var(--ctw-success-text) 30%, transparent);
+}
+
+@media (max-width: 900px) {
+  .options-grid {
+    grid-template-columns: 1fr;
+  }
+}
+

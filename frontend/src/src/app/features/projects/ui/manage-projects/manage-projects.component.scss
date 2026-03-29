@@ -1,0 +1,52 @@
+.projects-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 100%;
+}
+
+.projects-card {
+  width: 100%;
+}
+
+.projects-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.projects-header h3 {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 700;
+}
+
+.projects-header p {
+  margin: 8px 0 0;
+  color: var(--ctw-text-muted, #8aa0c0);
+}
+
+.projects-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-actions button.danger {
+  color: var(--ctw-danger, #f87070) !important;
+  border-color: color-mix(in srgb, var(--ctw-danger, #f87070) 45%, transparent) !important;
+}

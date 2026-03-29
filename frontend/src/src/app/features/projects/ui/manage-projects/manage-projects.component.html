@@ -1,0 +1,110 @@
+<section class="projects-view">
+  <mat-card class="projects-card data-card ctw-panel">
+    <mat-card-content>
+      <div class="projects-header">
+        <div>
+          <h3>Manage projects</h3>
+          <p>Admin workspace management. Projects scope Products, Scopes, Tests and Components.</p>
+        </div>
+        <div class="projects-actions">
+          <button mat-stroked-button type="button" (click)="refresh()">
+            Refresh
+          </button>
+          <button mat-flat-button color="primary" type="button" (click)="createProject()">
+            <lucide-icon [img]="Plus" aria-hidden="true"></lucide-icon>
+            <span>Add project</span>
+          </button>
+        </div>
+      </div>
+
+      <ng-template #rowContent let-row let-columns="columns">
+        @for (column of columns; track column.key) {
+          <td>{{ rowValue(row, column.key) }}</td>
+        }
+      </ng-template>
+
+      <ng-template #actions let-row>
+        <div class="row-actions">
+          <button mat-stroked-button type="button" (click)="editProject(row)">
+            <lucide-icon [img]="Pencil" aria-hidden="true"></lucide-icon>
+            <span>Edit</span>
+          </button>
+          <button mat-stroked-button type="button" (click)="manageMembers(row)">
+            <lucide-icon [img]="Users" aria-hidden="true"></lucide-icon>
+            <span>Members</span>
+          </button>
+          <button mat-stroked-button type="button" class="danger" (click)="deleteProject(row)">
+            <lucide-icon [img]="Trash2" aria-hidden="true"></lucide-icon>
+            <span>Delete</span>
+          </button>
+        </div>
+      </ng-template>
+
+      <ng-template #toolbar>
+        <button
+          type="button"
+          class="filter-panel-toggle"
+          [class.active]="filterPanelOpen()"
+          (click)="toggleExtendedFilters()"
+          aria-label="Toggle extended filtering"
+        >
+          <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+          <span>Extended filtering</span>
+        </button>
+      </ng-template>
+
+      <ng-template #panel>
+        @if (filterPanelOpen()) {
+          <app-advanced-filter-panel
+            [fields]="advancedFields()"
+            [idPrefix]="'projects'"
+            (modeChange)="setFilterMode($event.key, $event.mode)"
+            (valueChange)="setFilterValue($event.key, $event.value)"
+            (selectionChange)="setMultiFilter($event.key, $event.values)"
+            (clearFilters)="clearFilters()"
+          ></app-advanced-filter-panel>
+        }
+      </ng-template>
+
+      @if (status() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator [message]="'Loading projects...'" [size]="28"></app-loading-indicator>
+        </div>
+      } @else if (status() === 'error') {
+        <div class="ctw-card-state error">{{ errorMessage() ?? 'Failed to load projects.' }}</div>
+      } @else {
+        <app-data-table
+          [columns]="columns"
+          [rows]="tableRows()"
+          [columnOrder]="columnOrder()"
+          [availableColumns]="availableColumns()"
+          [tablePanelOpen]="tablePanelOpen()"
+          [lockedColumns]="lockedColumns"
+          [filterRowVisible]="filterRowVisible()"
+          [filterVisible]="filterVisible()"
+          [columnFilters]="columnFilters()"
+          [sortColumn]="sortColumn()"
+          [sortDir]="sortDir()"
+          [toolbarTemplate]="toolbar"
+          [panelTemplate]="panel"
+          [rowContentTemplate]="rowContent"
+          [actionsTemplate]="actions"
+          [showActionsColumn]="true"
+          [status]="'loaded'"
+          [emptyMessage]="'No projects found.'"
+          [enableSorting]="true"
+          [showFilterToggle]="true"
+          [showTablePanel]="true"
+          [paginationEnabled]="false"
+          (toggleTablePanel)="toggleTablePanel()"
+          (dropColumn)="dropColumn($event)"
+          (removeColumn)="removeColumn($event)"
+          (addColumn)="addColumn($event)"
+          (toggleFilter)="toggleFilter($event.key, $event.event)"
+          (setColumnFilter)="setColumnFilter($event.key, $event.event)"
+          (toggleSort)="toggleSort($event)"
+        ></app-data-table>
+      }
+    </mat-card-content>
+  </mat-card>
+</section>

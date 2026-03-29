@@ -1,0 +1,364 @@
+<section class="posture-view">
+  <div class="posture-header ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="header-copy ctw-shell-copy">
+      <h2 class="ctw-shell-title">Posture</h2>
+      <p class="ctw-shell-subtitle">
+        Technical posture for ingest, sources, events, and inventory in the selected project.
+      </p>
+      <div class="header-meta ctw-shell-meta mono">
+        Project: {{ selectedProjectName() ?? 'N/A' }} · Scope: project
+      </div>
+    </div>
+  </div>
+
+  <mat-card class="posture-controls ctw-panel">
+    <mat-card-content class="posture-controls-content">
+      <div class="score-box">
+        <div class="score-ring" [style.background]="scoreRing()">
+          <div class="score-core">
+            <div class="score-value mono" [style.color]="scoreColor()">{{ formatInteger(scoreSafeProducts()) }}</div>
+            <div class="score-max mono">/ {{ formatInteger(scoreTotalProducts()) }}</div>
+          </div>
+        </div>
+        <div class="score-label">Safe Products / Total Products</div>
+      </div>
+
+      <div class="header-controls">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="header-select">
+          <mat-label>Top X</mat-label>
+          <mat-select [value]="store.topN()" (selectionChange)="onTopNChange($event.value)">
+            @for (option of topNOptions(); track option) {
+              <mat-option [value]="option">
+                {{ option === topNAllValue ? topNAllLabel : option }}
+              </mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+
+        <button mat-stroked-button type="button" (click)="openExplorer()">Open Explorer</button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  @if (store.status() === 'loading') {
+    <div class="ctw-card-state">
+      <app-loading-indicator [message]="'Loading security posture...'" [size]="30"></app-loading-indicator>
+    </div>
+  } @else if (store.status() === 'error') {
+    <div class="ctw-card-state error" role="status" aria-live="polite">
+      {{ store.errorMessage() ?? 'Failed to load security posture.' }}
+    </div>
+  } @else {
+    <section class="kpi-grid" aria-label="Security posture KPIs">
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Unknown (pending)</div>
+        <div class="kpi-value warning">{{ formatInteger(kpis().unknownPending) }}</div>
+        <div class="kpi-meta">Components awaiting verdict (active revisions)</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Ingest failures</div>
+        <div class="kpi-value danger">{{ formatInteger(kpis().ingestFailures) }}</div>
+        <div class="kpi-meta">{{ formatPercent(kpis().ingestFailurePercent) }} failure rate in range</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">OSV sync (global)</div>
+        <div class="kpi-value" [class.success]="kpis().osvSyncStatus === 'OK'" [class.warning]="kpis().osvSyncStatus === 'RUNNING'" [class.danger]="kpis().osvSyncStatus === 'ERROR'">
+          {{ kpis().osvSyncStatus }}
+        </div>
+        <div class="kpi-meta">
+          Last sync: {{ formatRelative(kpis().osvLastSyncAt) }} · errors: {{ formatInteger(kpis().osvErrors) }}
+        </div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Open ERROR events</div>
+        <div class="kpi-value danger">{{ formatInteger(kpis().openErrorEvents) }}</div>
+        <div class="kpi-meta">Needs triage and acknowledgment</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Queue backlog</div>
+        <div class="kpi-value info">{{ formatInteger(kpis().queueBacklog) }}</div>
+        <div class="kpi-meta">Component analysis queue items</div>
+      </mat-card>
+
+      <mat-card class="kpi-card ctw-panel">
+        <div class="kpi-title">Inventory top type</div>
+        <div class="kpi-value">{{ kpis().inventoryTopType || 'N/A' }}</div>
+        <div class="kpi-meta">Most common package type (active)</div>
+      </mat-card>
+    </section>
+
+    <section class="charts-grid">
+      <mat-card class="summary-card ctw-panel">
+        <div class="summary-header">
+          <h3>Ingest timeline</h3>
+        </div>
+        <div class="summary-subtitle">
+          Imports over time (day bucket) with failure overlay
+        </div>
+        <div class="timeline-shell">
+          <div class="timeline-chart-wrap">
+            <svg
+              #ingestTimelineSvg
+              class="timeline-chart"
+              viewBox="0 0 420 150"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              @for (tick of ingestTimeline().yGrid; track tick) {
+                <line class="grid-line" x1="34" [attr.y1]="tick" x2="408" [attr.y2]="tick"></line>
+              }
+              <path class="area-primary" [attr.d]="ingestTimeline().primaryArea"></path>
+              <path class="line-primary" [attr.d]="ingestTimeline().primaryLine"></path>
+              <path class="line-secondary" [attr.d]="ingestTimeline().secondaryLine"></path>
+              @if (ingestSelection(); as selected) {
+                <line
+                  class="focus-line"
+                  [attr.x1]="selected.pointX"
+                  [attr.y1]="ingestTimeline().yMin"
+                  [attr.x2]="selected.pointX"
+                  [attr.y2]="ingestTimeline().yMax"
+                ></line>
+              }
+              @for (point of ingestTimeline().points; track point.index) {
+                <circle
+                  class="point-secondary"
+                  [attr.cx]="point.x"
+                  [attr.cy]="point.secondaryY"
+                  r="2.4"
+                ></circle>
+                <circle
+                  class="point-primary"
+                  [class.selected]="ingestSelection()?.index === point.index"
+                  [attr.cx]="point.x"
+                  [attr.cy]="point.primaryY"
+                  r="3.2"
+                ></circle>
+                <circle
+                  class="point-hit"
+                  [attr.cx]="point.x"
+                  [attr.cy]="point.primaryY"
+                  r="11"
+                  tabindex="0"
+                  role="button"
+                  [attr.aria-label]="timelinePointAria(point, 'Imports', 'Failures')"
+                  [attr.title]="timelinePointTooltip(point, 'Imports', 'Failures')"
+                  (click)="selectIngestPoint(point.index)"
+                  (mouseenter)="setTimelineHover('ingest', point.index)"
+                  (mouseleave)="setTimelineHover('ingest', null)"
+                  (focus)="setTimelineHover('ingest', point.index)"
+                  (blur)="setTimelineHover('ingest', null)"
+                  (keydown)="onTimelinePointKeydown($event, 'ingest', point.index)"
+                ></circle>
+              }
+            </svg>
+            @if (ingestTooltip(); as tooltip) {
+              <div
+                class="timeline-tooltip mono"
+                [style.left.%]="tooltip.leftPercent"
+                [style.top.%]="tooltip.topPercent"
+                role="status"
+                aria-live="polite"
+              >
+                <div class="timeline-tooltip-time">{{ tooltip.timestampLabel }}</div>
+                <div>{{ tooltip.primaryLabel }}: {{ formatInteger(tooltip.primaryValue) }}</div>
+                <div>{{ tooltip.secondaryLabel }}: {{ formatInteger(tooltip.secondaryValue) }}</div>
+              </div>
+            }
+          </div>
+          <div class="timeline-legend-row">
+            <span><span class="timeline-dot primary"></span>Imports</span>
+            <span><span class="timeline-dot secondary"></span>Failures</span>
+          </div>
+          <div class="timeline-axis mono">
+            <span>{{ ingestTimeline().labels[0] }}</span>
+            <span>{{ ingestTimeline().labels[1] }}</span>
+            <span>{{ ingestTimeline().labels[2] }}</span>
+          </div>
+        </div>
+      </mat-card>
+
+      <mat-card class="summary-card ctw-panel">
+        <div class="summary-header">
+          <h3>OSV sync timeline</h3>
+        </div>
+        <div class="summary-subtitle">
+          Sync runs over time (day bucket) with error overlay
+        </div>
+        <div class="timeline-shell">
+          <div class="timeline-chart-wrap">
+            <svg
+              #osvTimelineSvg
+              class="timeline-chart"
+              viewBox="0 0 420 150"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              @for (tick of osvTimeline().yGrid; track tick) {
+                <line class="grid-line" x1="34" [attr.y1]="tick" x2="408" [attr.y2]="tick"></line>
+              }
+              <path class="area-primary" [attr.d]="osvTimeline().primaryArea"></path>
+              <path class="line-primary" [attr.d]="osvTimeline().primaryLine"></path>
+              <path class="line-secondary" [attr.d]="osvTimeline().secondaryLine"></path>
+              @if (osvSelection(); as selected) {
+                <line
+                  class="focus-line"
+                  [attr.x1]="selected.pointX"
+                  [attr.y1]="osvTimeline().yMin"
+                  [attr.x2]="selected.pointX"
+                  [attr.y2]="osvTimeline().yMax"
+                ></line>
+              }
+              @for (point of osvTimeline().points; track point.index) {
+                <circle
+                  class="point-secondary"
+                  [attr.cx]="point.x"
+                  [attr.cy]="point.secondaryY"
+                  r="2.4"
+                ></circle>
+                <circle
+                  class="point-primary"
+                  [class.selected]="osvSelection()?.index === point.index"
+                  [attr.cx]="point.x"
+                  [attr.cy]="point.primaryY"
+                  r="3.2"
+                ></circle>
+                <circle
+                  class="point-hit"
+                  [attr.cx]="point.x"
+                  [attr.cy]="point.primaryY"
+                  r="11"
+                  tabindex="0"
+                  role="button"
+                  [attr.aria-label]="timelinePointAria(point, 'Sync runs', 'Errors')"
+                  [attr.title]="timelinePointTooltip(point, 'Sync runs', 'Errors')"
+                  (click)="selectOsvPoint(point.index)"
+                  (mouseenter)="setTimelineHover('osv', point.index)"
+                  (mouseleave)="setTimelineHover('osv', null)"
+                  (focus)="setTimelineHover('osv', point.index)"
+                  (blur)="setTimelineHover('osv', null)"
+                  (keydown)="onTimelinePointKeydown($event, 'osv', point.index)"
+                ></circle>
+              }
+            </svg>
+            @if (osvTooltip(); as tooltip) {
+              <div
+                class="timeline-tooltip mono"
+                [style.left.%]="tooltip.leftPercent"
+                [style.top.%]="tooltip.topPercent"
+                role="status"
+                aria-live="polite"
+              >
+                <div class="timeline-tooltip-time">{{ tooltip.timestampLabel }}</div>
+                <div>{{ tooltip.primaryLabel }}: {{ formatInteger(tooltip.primaryValue) }}</div>
+                <div>{{ tooltip.secondaryLabel }}: {{ formatInteger(tooltip.secondaryValue) }}</div>
+              </div>
+            }
+          </div>
+          <div class="timeline-legend-row">
+            <span><span class="timeline-dot primary"></span>Sync runs</span>
+            <span><span class="timeline-dot secondary"></span>Errors</span>
+          </div>
+          <div class="timeline-axis mono">
+            <span>{{ osvTimeline().labels[0] }}</span>
+            <span>{{ osvTimeline().labels[1] }}</span>
+            <span>{{ osvTimeline().labels[2] }}</span>
+          </div>
+        </div>
+      </mat-card>
+    </section>
+
+    <section class="tables-grid">
+      <mat-card class="table-card data-card ctw-panel">
+        <mat-card-content>
+          <div class="table-header">
+            <div>
+              <h3>Recent uploads (Last {{ topNLabel() }})</h3>
+              <p>Latest upload activity in selected project</p>
+            </div>
+          </div>
+
+          <ng-template #uploadRow let-row let-columns="columns">
+            @for (column of columns; track column.key) {
+              <td [class]="column.key === 'summary' ? 'mono' : ''">
+                @if (column.key === 'status') {
+                  <span [class]="uploadBadgeClass(row.status)">{{ normalizeUploadStatus(row.status) }}</span>
+                } @else {
+                  {{ uploadRowValue(row, column.key) }}
+                }
+              </td>
+            }
+          </ng-template>
+
+          <ng-template #uploadActions let-row>
+            <button mat-stroked-button type="button" (click)="openUpload(row)">Open</button>
+          </ng-template>
+
+          <app-data-table
+            [columns]="uploadColumns"
+            [rows]="recentUploads()"
+            [columnOrder]="uploadColumnOrder()"
+            [availableColumns]="[]"
+            [tablePanelOpen]="false"
+            [showTablePanel]="false"
+            [showFilterToggle]="false"
+            [enableSorting]="false"
+            [exportEnabled]="false"
+            [paginationEnabled]="false"
+            [status]="'loaded'"
+            [showActionsColumn]="true"
+            [rowContentTemplate]="uploadRow"
+            [actionsTemplate]="uploadActions"
+            [emptyMessage]="'No uploads in current range.'"
+          ></app-data-table>
+        </mat-card-content>
+      </mat-card>
+
+      <mat-card class="table-card data-card ctw-panel">
+        <mat-card-content>
+          <div class="table-header">
+            <div>
+              <h3>Recent failures (Last {{ topNLabel() }})</h3>
+              <p>Technical failures for triage (ingest + source sync)</p>
+            </div>
+          </div>
+
+          <ng-template #failureRow let-row let-columns="columns">
+            @for (column of columns; track column.key) {
+              <td [class]="column.key === 'component' || column.key === 'summary' ? 'mono' : ''">
+                @if (column.key === 'status') {
+                  <span [class]="failureBadgeClass(row.status)">{{ row.status }}</span>
+                } @else {
+                  {{ failureRowValue(row, column.key) }}
+                }
+              </td>
+            }
+          </ng-template>
+
+          <ng-template #failureActions let-row>
+            <button mat-stroked-button type="button" (click)="openFailure(row)">Open</button>
+          </ng-template>
+
+          <app-data-table
+            [columns]="failureColumns"
+            [rows]="recentFailures()"
+            [columnOrder]="failureColumnOrder()"
+            [availableColumns]="[]"
+            [tablePanelOpen]="false"
+            [showTablePanel]="false"
+            [showFilterToggle]="false"
+            [enableSorting]="false"
+            [exportEnabled]="false"
+            [paginationEnabled]="false"
+            [status]="'loaded'"
+            [showActionsColumn]="true"
+            [rowContentTemplate]="failureRow"
+            [actionsTemplate]="failureActions"
+            [emptyMessage]="'No recent failures in current range.'"
+          ></app-data-table>
+        </mat-card-content>
+      </mat-card>
+    </section>
+  }
+</section>

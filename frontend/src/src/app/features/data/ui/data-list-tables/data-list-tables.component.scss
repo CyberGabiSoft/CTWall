@@ -1,0 +1,75 @@
+.list-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 0;
+  padding: 0px 16px 0; /* Add padding because card content has no padding (flush) */
+}
+
+.back-btn {
+  text-transform: none;
+  background: var(--ctw-surface);
+  border: 1px solid var(--ctw-border);
+}
+
+.header-placeholder {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.open-btn {
+  font-weight: 500;
+  letter-spacing: normal;
+
+  .btn-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    line-height: normal; /* Reset line-height to ensure vertical centering */
+  }
+
+  /* Target lucide-icon wrapper to ensure it doesn't add extra height */
+  lucide-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px; /* Match icon size */
+  }
+
+  /* Ensure SVG is sized correctly */
+  ::ng-deep svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2;
+  }
+}
+
+.btn-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-actions svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  display: block;
+}
+
+.header-count {
+  font-size: 0.9em;
+  color: var(--ctw-success-text);
+  font-weight: 500;
+  margin-left: 8px;
+}

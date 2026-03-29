@@ -1,0 +1,15 @@
+CTWall frontend has been deployed.
+
+1. Check release resources:
+   kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Port-forward frontend service:
+   kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "ctwall-frontend.fullname" . }} 8081:{{ .Values.service.port }}
+
+3. Open UI:
+   https://127.0.0.1:8081
+
+4. Runtime note:
+   - Frontend proxies `/api/*` to `BACKEND_UPSTREAM` (current value: {{ .Values.env.BACKEND_UPSTREAM }}).
+   - Ensure backend service is reachable from this frontend pod.
+   - TLS cert secret used by frontend: {{ .Values.tls.existingSecret | default "(not set)" }}

@@ -1,0 +1,30 @@
+<h2 mat-dialog-title>Service account token generated</h2>
+
+<div mat-dialog-content class="dialog-content">
+  <p class="hint">
+    Save this token now. It is shown only once and cannot be recovered later.
+  </p>
+  <div class="meta-grid">
+    <div class="meta-item">
+      <span class="meta-label">User</span>
+      <strong>{{ data.userEmail }}</strong>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Token name</span>
+      <strong>{{ data.name }}</strong>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Token ID</span>
+      <strong class="mono">{{ data.tokenId }}</strong>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Expires at</span>
+      <strong>{{ data.expiresAt || 'No expiry' }}</strong>
+    </div>
+  </div>
+  <app-copy-block [label]="'API token'" [value]="data.token"></app-copy-block>
+</div>
+
+<div mat-dialog-actions align="end">
+  <button mat-flat-button color="primary" type="button" (click)="close()">Close</button>
+</div>

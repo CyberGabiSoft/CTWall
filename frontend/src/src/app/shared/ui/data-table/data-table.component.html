@@ -1,0 +1,359 @@
+@if (showToolbar()) {
+  <div class="extended-filter">
+    <div class="filter-toolbar">
+      @if (toolbarTemplate()) {
+        <ng-container [ngTemplateOutlet]="toolbarTemplate()"></ng-container>
+      }
+      @if (showTablePanel()) {
+        <button
+          type="button"
+          class="filter-panel-toggle table-panel-toggle"
+          [class.active]="tablePanelOpen()"
+          (click)="toggleTablePanel.emit()"
+          aria-label="Toggle table options"
+        >
+          <lucide-icon [img]="Table" aria-hidden="true"></lucide-icon>
+          <span>Table</span>
+        </button>
+      }
+      @if (exportEnabled()) {
+        <button
+          type="button"
+          class="filter-panel-toggle export-panel-toggle"
+          [class.active]="exportTrigger.menuOpen"
+          aria-label="Export table"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="exportTrigger.menuOpen"
+          (click)="exportTrigger.openMenu()"
+        >
+          <span
+            class="export-menu-origin"
+            [matMenuTriggerFor]="exportMenu"
+            #exportTrigger="matMenuTrigger"
+            aria-hidden="true"
+          ></span>
+          <lucide-icon [img]="Download" aria-hidden="true"></lucide-icon>
+          <span>Export</span>
+        </button>
+        <mat-menu
+          #exportMenu="matMenu"
+          xPosition="after"
+          [overlapTrigger]="false"
+          class="export-menu-panel"
+        >
+          <button mat-menu-item type="button" (click)="export('csv')" [disabled]="exporting()">
+            CSV
+          </button>
+          <button mat-menu-item type="button" (click)="export('xlsx')" [disabled]="exporting()">
+            XLSX
+          </button>
+          <button mat-menu-item type="button" (click)="export('pdf')" [disabled]="exporting()">
+            PDF
+          </button>
+          @if (exporting()) {
+            <button mat-menu-item type="button" disabled>
+              Exporting…
+            </button>
+          }
+        </mat-menu>
+      }
+    </div>
+    @if (showTablePanel() && tablePanelOpen()) {
+      <div class="table-options-panel">
+        <div class="table-options-header">
+          <div>
+            <strong>Visible columns</strong>
+            <span>Drag chips to reorder.</span>
+          </div>
+        </div>
+        @if (tableOptionsHint()) {
+          <p class="table-options-hint">{{ tableOptionsHint() }}</p>
+        }
+        <mat-chip-grid
+          class="column-chip-grid"
+          cdkDropList
+          cdkDropListOrientation="horizontal"
+          [cdkDropListData]="columnOrder()"
+          (cdkDropListDropped)="dropColumn.emit($event)"
+        >
+          @for (column of columnOrder(); track column) {
+            <mat-chip-row
+              class="column-chip"
+              cdkDrag
+              [removable]="!lockedColumns().includes(column) && columnOrder().length > 1"
+              (removed)="removeColumnFromPanel(column)"
+            >
+              <span class="chip-label">{{ columnLabel(column) }}</span>
+              <span class="chip-drag" cdkDragHandle>
+                <lucide-icon [img]="GripVertical" aria-hidden="true"></lucide-icon>
+              </span>
+              @if (!lockedColumns().includes(column) && columnOrder().length > 1) {
+                <button matChipRemove aria-label="Remove column">
+                  <lucide-icon [img]="X" aria-hidden="true"></lucide-icon>
+                </button>
+              }
+            </mat-chip-row>
+          }
+        </mat-chip-grid>
+        @if (selectedDetailColumns().length > 0) {
+          <div class="table-options-detail-columns">
+            <strong>Detail columns</strong>
+            <span>Added from expanded row key-value details.</span>
+          </div>
+          <mat-chip-grid class="column-chip-grid column-chip-grid--detail">
+            @for (column of selectedDetailColumns(); track column.key) {
+              <mat-chip-row class="column-chip" [removable]="true" (removed)="removeColumnFromPanel(column.key)">
+                <span class="chip-label">{{ detailColumnLabel(column.key) }}</span>
+                <button matChipRemove aria-label="Remove detail column">
+                  <lucide-icon [img]="X" aria-hidden="true"></lucide-icon>
+                </button>
+              </mat-chip-row>
+            }
+          </mat-chip-grid>
+        }
+        <mat-form-field appearance="outline" class="column-add-field" subscriptSizing="dynamic">
+          <mat-select
+            placeholder="Add column"
+            (selectionChange)="onAddColumn($event.value); $event.source.value = null"
+            [disabled]="selectableColumns().length === 0"
+          >
+            @for (option of selectableColumns(); track option.key) {
+              <mat-option [value]="option.key">{{ option.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+      </div>
+    }
+  </div>
+}
+
+@if (panelTemplate()) {
+  <ng-container [ngTemplateOutlet]="panelTemplate()"></ng-container>
+}
+
+<div #tableScroll class="table-scroll mat-elevation-z1">
+  <table [class]="tableClass() ? 'data-table-grid ' + tableClass() : 'data-table-grid'">
+    <thead>
+      <tr>
+        @for (column of orderedColumns(); track column.key) {
+          <th
+            [class]="columnClass(column)"
+            (click)="column.sortKey && enableSorting() ? toggleSort.emit(column.sortKey) : null"
+          >
+            <span>{{ column.label }}</span>
+            @if ((showFilterToggle() && column.filterKey) || (enableSorting() && column.sortKey)) {
+              <span class="header-icons">
+                @if (showFilterToggle() && column.filterKey) {
+                  <button
+                    type="button"
+                    class="filter-toggle"
+                    [class.active]="filterVisible()[column.filterKey]"
+                    (click)="onToggleFilter(column.filterKey, $event)"
+                    [attr.aria-label]="'Filter by ' + column.label"
+                  >
+                    <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+                  </button>
+                }
+                @if (enableSorting() && column.sortKey) {
+                  <span class="sort-indicator">{{ sortIndicator(column) }}</span>
+                }
+              </span>
+            }
+          </th>
+        }
+        @if (showActionsColumn()) {
+          <th class="actions"></th>
+        }
+      </tr>
+      @if (filterRowVisible()) {
+        <tr class="filter-row">
+          @for (column of orderedColumns(); track column.key) {
+            <th [class]="column.className ?? ''">
+              @if (column.filterKey && filterVisible()[column.filterKey]) {
+                <input
+                  class="column-filter"
+                  type="search"
+                  placeholder="Filter"
+                  [attr.size]="(columnFilters()[column.filterKey] ?? '').length || 6"
+                  [value]="columnFilters()[column.filterKey] ?? ''"
+                  (input)="onSetColumnFilter(column.filterKey, $event)"
+                />
+              }
+            </th>
+          }
+          @if (showActionsColumn()) {
+            <th></th>
+          }
+        </tr>
+      }
+    </thead>
+    <tbody (pointermove)="onBodyPointerMove($event)" (focusin)="onBodyFocusIn($event)">
+      @if (status() === 'loading') {
+        <tr>
+          <td [attr.colspan]="colSpan()" class="empty">
+            <div class="table-state">
+              <app-loading-indicator [message]="loadingMessage()" [compact]="true"></app-loading-indicator>
+            </div>
+          </td>
+        </tr>
+      } @else if (status() === 'error') {
+        <tr>
+          <td [attr.colspan]="colSpan()" class="empty">
+            <div class="table-state table-state--error" role="status" aria-live="polite">
+              {{ errorMessage() }}
+            </div>
+          </td>
+        </tr>
+      } @else if (rows().length === 0) {
+        <tr>
+          <td [attr.colspan]="colSpan()" class="empty">
+            <div class="table-state">
+              {{ emptyMessage() }}
+            </div>
+          </td>
+        </tr>
+      } @else {
+        @for (row of rows(); track trackRow(row, $index)) {
+          @if (rowTemplate()) {
+            <ng-container
+              [ngTemplateOutlet]="rowTemplate()"
+              [ngTemplateOutletContext]="{ $implicit: row, columns: orderedColumns(), index: $index, colspan: colSpan() }"
+            ></ng-container>
+            @if (expandable() && expandedRowTemplate() && isExpanded(row, $index)) {
+              <tr class="expanded">
+                <td [attr.colspan]="colSpan()">
+                  <ng-container
+                    [ngTemplateOutlet]="expandedRowTemplate()"
+                    [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+                  ></ng-container>
+                </td>
+              </tr>
+            }
+          } @else if (rowContentTemplate()) {
+            <tr
+              class="row"
+              (click)="onRowClick(row, $index, $event)"
+              [attr.aria-expanded]="expandable() ? isExpanded(row, $index) : null"
+              [class.expanded-row]="expandable() && isExpanded(row, $index)"
+            >
+              <ng-container
+                [ngTemplateOutlet]="rowContentTemplate()"
+                [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+              ></ng-container>
+              @for (column of selectedDetailColumns(); track column.key) {
+                <td [class]="column.className ?? ''">{{ cellValue(row, column.key) }}</td>
+              }
+              @if (showActionsColumn()) {
+                <td class="actions">
+                  @if (actionsTemplate()) {
+                    <ng-container
+                      [ngTemplateOutlet]="actionsTemplate()"
+                      [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+                    ></ng-container>
+                  }
+                </td>
+              }
+            </tr>
+            @if (expandable() && expandedRowTemplate() && isExpanded(row, $index)) {
+              <tr class="expanded">
+                <td [attr.colspan]="colSpan()">
+                  <ng-container
+                    [ngTemplateOutlet]="expandedRowTemplate()"
+                    [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+                  ></ng-container>
+                </td>
+              </tr>
+            }
+          } @else {
+            <tr
+              class="row"
+              (click)="onRowClick(row, $index, $event)"
+              [attr.aria-expanded]="expandable() ? isExpanded(row, $index) : null"
+              [class.expanded-row]="expandable() && isExpanded(row, $index)"
+            >
+              @for (column of orderedColumns(); track column.key) {
+                <td [class]="column.className ?? ''">{{ cellValue(row, column.key) }}</td>
+              }
+              @if (showActionsColumn()) {
+                <td class="actions">
+                  @if (actionsTemplate()) {
+                    <ng-container
+                      [ngTemplateOutlet]="actionsTemplate()"
+                      [ngTemplateOutletContext]="{ $implicit: row, columns: orderedColumns(), index: $index, colspan: colSpan() }"
+                    ></ng-container>
+                  }
+                </td>
+              }
+            </tr>
+            @if (expandable() && expandedRowTemplate() && isExpanded(row, $index)) {
+              <tr class="expanded">
+                <td [attr.colspan]="colSpan()">
+                  <ng-container
+                    [ngTemplateOutlet]="expandedRowTemplate()"
+                    [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+                  ></ng-container>
+                </td>
+              </tr>
+            }
+          }
+        }
+      }
+    </tbody>
+  </table>
+</div>
+
+@if (showLimitedAction()) {
+  <div class="table-limit">
+    <div class="table-limit-text">
+      Showing {{ limitedShownValue() }} of {{ limitedTotal() }}.
+    </div>
+    <button
+      mat-stroked-button
+      type="button"
+      (click)="loadAllRequested.emit()"
+      [disabled]="limitedActionDisabled()"
+    >
+      {{ limitedActionLabel() }}
+    </button>
+  </div>
+}
+
+@if (paginationEnabled()) {
+  <div class="table-pagination">
+    <div class="page-size">
+      <span>Rows</span>
+      <mat-form-field appearance="outline">
+        <mat-select
+          [value]="pageSize()"
+          (selectionChange)="setPageSize.emit($event.value)"
+          panelClass="page-size-panel"
+        >
+          @for (size of pageSizeOptions(); track size) {
+            <mat-option [value]="size">{{ size === 0 ? 'All' : size }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    </div>
+    <div class="page-info">
+      Page {{ pageIndex() + 1 }} of {{ totalPages() }}
+    </div>
+    <div class="page-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="prevPage.emit()"
+        [disabled]="pageIndex() === 0"
+      >
+        Prev
+      </button>
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="nextPage.emit()"
+        [disabled]="pageIndex() + 1 >= totalPages()"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+}

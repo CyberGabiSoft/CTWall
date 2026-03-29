@@ -1,0 +1,407 @@
+<section class="identity-view">
+  <div class="identity-shell ctw-panel ctw-panel--padded ctw-shell-header">
+    <div class="ctw-shell-copy">
+      <h2 class="ctw-shell-title">User Groups</h2>
+      <p class="ctw-shell-subtitle">Manage project groups, group membership, and EDITOR/VIEWER assignments.</p>
+    </div>
+    <button
+      mat-stroked-button
+      type="button"
+      class="identity-refresh-btn"
+      (click)="refresh()"
+      aria-label="Refresh user groups data"
+    >
+      <lucide-icon [img]="RefreshCw" aria-hidden="true"></lucide-icon>
+      <span>Refresh</span>
+    </button>
+  </div>
+
+  <mat-card class="identity-card data-card ctw-panel">
+    <mat-card-content>
+      <div class="card-header">
+        <div class="section-title-block">
+          <h4>Groups</h4>
+          <p class="section-subtitle">All groups in the active project scope.</p>
+        </div>
+        @if (canCreateGroup()) {
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            class="identity-primary-btn"
+            (click)="createGroup()"
+          >
+            <lucide-icon [img]="CirclePlus" aria-hidden="true"></lucide-icon>
+            <span>Create group</span>
+          </button>
+        }
+      </div>
+
+      <ng-template #groupsRowContent let-row let-columns="columns">
+        @for (column of columns; track column.key) {
+          <td>
+            @if (column.key === 'myRole') {
+              @if (row.myRole !== '-') {
+                <span [class]="memberRoleClass(row.myRole)">{{ row.myRole }}</span>
+              } @else {
+                -
+              }
+            } @else {
+              {{ groupValue(row, column.key) }}
+            }
+          </td>
+        }
+      </ng-template>
+
+      <ng-template #groupsActions let-row>
+        <div class="row-actions">
+          <button
+            mat-stroked-button
+            type="button"
+            class="group-open-btn"
+            (click)="selectGroup(row.id)"
+            [class.active]="selectedGroupId() === row.id"
+            [attr.aria-label]="
+              selectedGroupId() === row.id ? 'Selected group' : 'Open group members'
+            "
+          >
+            @if (selectedGroupId() === row.id) {
+              <lucide-icon [img]="Check" aria-hidden="true"></lucide-icon>
+              <span>Selected</span>
+            } @else {
+              <lucide-icon [img]="Users" aria-hidden="true"></lucide-icon>
+              <span>Members</span>
+            }
+          </button>
+        </div>
+      </ng-template>
+
+      <ng-template #groupsToolbar>
+        <button
+          type="button"
+          class="filter-panel-toggle"
+          [class.active]="groupFilterPanelOpen()"
+          (click)="toggleGroupExtendedFilters()"
+          aria-label="Toggle extended filtering for groups"
+        >
+          <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+          <span>Extended filtering</span>
+        </button>
+      </ng-template>
+
+      <ng-template #groupsPanel>
+        @if (groupFilterPanelOpen()) {
+          <app-advanced-filter-panel
+            [fields]="groupAdvancedFields()"
+            [idPrefix]="'identity-group'"
+            (modeChange)="setGroupFilterMode($event.key, $event.mode)"
+            (valueChange)="setGroupFilterValue($event.key, $event.value)"
+            (selectionChange)="setGroupMultiFilter($event.key, $event.values)"
+            (clearFilters)="clearGroupFilters()"
+          ></app-advanced-filter-panel>
+        }
+      </ng-template>
+
+      @if (groupsStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator
+            [message]="'Loading groups...'"
+            [size]="28"
+          ></app-loading-indicator>
+        </div>
+      } @else if (groupsStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">
+          {{ groupsError() ?? 'Failed to load groups.' }}
+        </div>
+      } @else {
+        <app-data-table
+          [columns]="groupColumns"
+          [rows]="groupsTableRows()"
+          [columnOrder]="groupColumnOrder()"
+          [availableColumns]="groupAvailableColumns()"
+          [tablePanelOpen]="groupTablePanelOpen()"
+          [lockedColumns]="groupLockedColumns"
+          [filterRowVisible]="groupFilterRowVisible()"
+          [filterVisible]="groupFilterVisible()"
+          [columnFilters]="groupColumnFilters()"
+          [sortColumn]="groupSortColumn()"
+          [sortDir]="groupSortDir()"
+          [rowContentTemplate]="groupsRowContent"
+          [toolbarTemplate]="groupsToolbar"
+          [panelTemplate]="groupsPanel"
+          [actionsTemplate]="groupsActions"
+          [showActionsColumn]="true"
+          [status]="'loaded'"
+          [emptyMessage]="'No groups found.'"
+          [enableSorting]="true"
+          [showFilterToggle]="true"
+          [showTablePanel]="true"
+          [paginationEnabled]="true"
+          [pageSizeOptions]="pageSizeOptions"
+          [pageSize]="groupPageSize()"
+          [pageIndex]="groupPageIndex()"
+          [totalPages]="groupTotalPages()"
+          (toggleTablePanel)="toggleGroupTablePanel()"
+          (dropColumn)="dropGroupColumn($event)"
+          (removeColumn)="removeGroupColumn($event)"
+          (addColumn)="addGroupColumn($event)"
+          (toggleFilter)="toggleGroupFilter($event.key, $event.event)"
+          (setColumnFilter)="setGroupColumnFilter($event.key, $event.event)"
+          (toggleSort)="toggleGroupSort($event)"
+          (setPageSize)="setGroupPageSize($event)"
+          (prevPage)="prevGroupPage()"
+          (nextPage)="nextGroupPage()"
+        ></app-data-table>
+      }
+    </mat-card-content>
+  </mat-card>
+
+  <mat-card class="identity-card data-card ctw-panel">
+    <mat-card-content>
+      <div class="card-header">
+        <div class="section-title-block">
+          <h4>Group Members</h4>
+          @if (selectedGroup()) {
+            <p class="section-subtitle group-context-line">
+              {{ selectedGroup()!.name }}
+              @if (currentUserRoleInSelectedGroup()) {
+                · your role: <strong class="group-context-role">{{ currentUserRoleInSelectedGroup() }}</strong>
+              }
+            </p>
+          } @else {
+            <p class="section-subtitle">Select a group to review membership and roles.</p>
+          }
+        </div>
+        <div class="header-actions">
+          <button
+            mat-stroked-button
+            type="button"
+            class="identity-secondary-btn"
+            (click)="resetMemberDraft()"
+            [disabled]="
+              !canManageSelectedGroupMembers() || !hasUnsavedMemberChanges() || membersSavePending()
+            "
+          >
+            <lucide-icon [img]="Undo2" aria-hidden="true"></lucide-icon>
+            <span>Reset</span>
+          </button>
+          <button
+            mat-flat-button
+            color="primary"
+            type="button"
+            class="identity-primary-btn"
+            (click)="saveMembers()"
+            [disabled]="
+              !canManageSelectedGroupMembers() || !hasUnsavedMemberChanges() || membersSavePending()
+            "
+          >
+            <lucide-icon [img]="Save" aria-hidden="true"></lucide-icon>
+            <span>Save changes</span>
+          </button>
+        </div>
+      </div>
+
+      @if (!hasSelectedGroup()) {
+        <div class="ctw-card-state">Select a group to load members.</div>
+      } @else if (membersStatus() === 'loading') {
+        <div class="ctw-card-state">
+          <app-loading-indicator
+            [message]="'Loading group members...'"
+            [size]="28"
+          ></app-loading-indicator>
+        </div>
+      } @else if (membersStatus() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">
+          {{ membersError() ?? 'Failed to load group members.' }}
+        </div>
+      } @else {
+        @if (canManageSelectedGroupMembers()) {
+          <div class="member-controls ctw-panel ctw-panel--compact" role="group" aria-label="Membership actions">
+            <div class="member-controls-row member-controls-row--project">
+              <mat-form-field appearance="outline" class="member-user-field ctw-form-field--compact">
+                <mat-label>Project member</mat-label>
+                <mat-select
+                  [value]="addProjectUserId()"
+                  [disabled]="
+                    projectMembersStatus() !== 'loaded' ||
+                    availableProjectMembersToAdd().length === 0
+                  "
+                  (selectionChange)="addProjectUserId.set($event.value)"
+                >
+                  @for (user of availableProjectMembersToAdd(); track user.id) {
+                    <mat-option [value]="user.id"
+                      >{{ user.fullName || user.email }} ({{ user.email }})</mat-option
+                    >
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline" class="member-role-field ctw-form-field--compact">
+                <mat-label>Role</mat-label>
+                <mat-select
+                  [value]="addProjectUserRole()"
+                  (selectionChange)="addProjectUserRole.set($event.value)"
+                >
+                  <mat-option value="EDITOR">EDITOR</mat-option>
+                  <mat-option value="VIEWER">VIEWER</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <button
+                mat-stroked-button
+                type="button"
+                class="member-action-btn"
+                (click)="addSelectedProjectMember()"
+              >
+                <lucide-icon [img]="UserPlus" aria-hidden="true"></lucide-icon>
+                <span>Add user</span>
+              </button>
+
+              <button
+                mat-stroked-button
+                type="button"
+                class="member-action-btn danger"
+                (click)="removeSelectedMembers()"
+                [disabled]="!hasSelectedMembers()"
+              >
+                <lucide-icon [img]="Trash2" aria-hidden="true"></lucide-icon>
+                <span>Remove selected</span>
+              </button>
+            </div>
+
+            @if (projectMembersStatus() === 'error') {
+              <div class="inline-hint" role="status" aria-live="polite">
+                {{ projectMembersError() }}
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="inline-hint" role="status" aria-live="polite">
+            Membership edit requires project ADMIN or WRITER with OWNER role in this group.
+          </div>
+        }
+
+        <ng-template #membersRowContent let-row let-columns="columns">
+          @for (column of columns; track column.key) {
+            <td [class]="column.className ?? ''">
+              @switch (column.key) {
+                @case ('select') {
+                  <mat-checkbox
+                    [checked]="isMemberSelected(row.userId)"
+                    [disabled]="!canManageSelectedGroupMembers() || isOwnerRole(row.role)"
+                    (change)="toggleMemberSelection(row.userId, $event.checked)"
+                    aria-label="Select member"
+                  ></mat-checkbox>
+                }
+                @case ('role') {
+                  @if (canManageSelectedGroupMembers() && !isOwnerRole(row.role)) {
+                    <mat-form-field
+                      appearance="outline"
+                      class="role-select-inline ctw-form-field--compact"
+                    >
+                      <mat-select
+                        [value]="row.role"
+                        (selectionChange)="setMemberRole(row.userId, $event.value)"
+                        aria-label="Set member role"
+                      >
+                        <mat-option value="EDITOR">EDITOR</mat-option>
+                        <mat-option value="VIEWER">VIEWER</mat-option>
+                      </mat-select>
+                    </mat-form-field>
+                  } @else {
+                    <span [class]="memberRoleClass(row.role)">{{ row.role }}</span>
+                  }
+                }
+                @default {
+                  {{ memberValue(row, column.key) }}
+                }
+              }
+            </td>
+          }
+        </ng-template>
+
+        <ng-template #membersActions let-row>
+          @if (canManageSelectedGroupMembers()) {
+            <button
+              mat-icon-button
+              type="button"
+              class="row-action-icon danger"
+              (click)="removeMember(row.userId)"
+              [disabled]="!canRemoveMember(row.userId)"
+              aria-label="Remove member"
+              [matTooltip]="isOwnerRole(row.role) ? 'Owner cannot be removed.' : 'Remove member'"
+              matTooltipPosition="above"
+            >
+              <lucide-icon [img]="Trash2" aria-hidden="true"></lucide-icon>
+            </button>
+          }
+        </ng-template>
+
+        <ng-template #membersToolbar>
+          <button
+            type="button"
+            class="filter-panel-toggle"
+            [class.active]="memberFilterPanelOpen()"
+            (click)="toggleMemberExtendedFilters()"
+            aria-label="Toggle extended filtering for members"
+          >
+            <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+            <span>Extended filtering</span>
+          </button>
+        </ng-template>
+
+        <ng-template #membersPanel>
+          @if (memberFilterPanelOpen()) {
+            <app-advanced-filter-panel
+              [fields]="memberAdvancedFields()"
+              [idPrefix]="'identity-member'"
+              (modeChange)="setMemberFilterMode($event.key, $event.mode)"
+              (valueChange)="setMemberFilterValue($event.key, $event.value)"
+              (selectionChange)="setMemberMultiFilter($event.key, $event.values)"
+              (clearFilters)="clearMemberFilters()"
+            ></app-advanced-filter-panel>
+          }
+        </ng-template>
+
+        <app-data-table
+          [columns]="memberColumns"
+          [rows]="membersTableRows()"
+          [columnOrder]="memberColumnOrder()"
+          [availableColumns]="memberAvailableColumns()"
+          [tablePanelOpen]="memberTablePanelOpen()"
+          [lockedColumns]="memberLockedColumns"
+          [filterRowVisible]="memberFilterRowVisible()"
+          [filterVisible]="memberFilterVisible()"
+          [columnFilters]="memberColumnFilters()"
+          [sortColumn]="memberSortColumn()"
+          [sortDir]="memberSortDir()"
+          [rowContentTemplate]="membersRowContent"
+          [toolbarTemplate]="membersToolbar"
+          [panelTemplate]="membersPanel"
+          [actionsTemplate]="membersActions"
+          [showActionsColumn]="canManageSelectedGroupMembers()"
+          [status]="'loaded'"
+          [emptyMessage]="'No members in this group.'"
+          [enableSorting]="true"
+          [showFilterToggle]="true"
+          [showTablePanel]="true"
+          [paginationEnabled]="true"
+          [pageSizeOptions]="pageSizeOptions"
+          [pageSize]="memberPageSize()"
+          [pageIndex]="memberPageIndex()"
+          [totalPages]="memberTotalPages()"
+          (toggleTablePanel)="toggleMemberTablePanel()"
+          (dropColumn)="dropMemberColumn($event)"
+          (removeColumn)="removeMemberColumn($event)"
+          (addColumn)="addMemberColumn($event)"
+          (toggleFilter)="toggleMemberFilter($event.key, $event.event)"
+          (setColumnFilter)="setMemberColumnFilter($event.key, $event.event)"
+          (toggleSort)="toggleMemberSort($event)"
+          (setPageSize)="setMemberPageSize($event)"
+          (prevPage)="prevMemberPage()"
+          (nextPage)="nextMemberPage()"
+        ></app-data-table>
+      }
+    </mat-card-content>
+  </mat-card>
+</section>

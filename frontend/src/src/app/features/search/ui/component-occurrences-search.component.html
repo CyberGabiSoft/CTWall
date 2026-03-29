@@ -1,0 +1,130 @@
+<section class="search-view">
+  <mat-card class="search-card data-card ctw-panel">
+    <mat-card-content>
+      <div class="search-header">
+        <div>
+          <h3>Component occurrences</h3>
+          <p>
+            @if (q()) {
+              Results for PURL contains: <span class="mono">{{ q() }}</span>
+            } @else {
+              Enter a PURL query in the top search bar and run search.
+            }
+          </p>
+        </div>
+      </div>
+
+      @if (!q()) {
+        <div class="ctw-card-state">No query yet.</div>
+      } @else if (status() === 'error') {
+        <div class="ctw-card-state error" role="status" aria-live="polite">
+          {{ errorMessage() ?? 'Failed to load search results.' }}
+        </div>
+      } @else {
+        <ng-template #rowContent let-row let-columns="columns">
+          @for (column of columns; track column.key) {
+            <td [class]="column.key === 'purl' ? 'mono' : ''">
+              @if (column.key === 'malwareVerdict') {
+                <span [class]="verdictClass(row.malwareVerdict)">{{ verdictLabel(row.malwareVerdict) }}</span>
+              } @else {
+                {{ rowValue(row, column.key) }}
+              }
+            </td>
+          }
+        </ng-template>
+
+        <ng-template #actions let-row>
+          <button mat-stroked-button type="button" class="open-btn" (click)="$event.stopPropagation(); openInExplorer(row)">
+            <lucide-icon [img]="ExternalLink" aria-hidden="true"></lucide-icon>
+            <span>Open in Explorer</span>
+          </button>
+        </ng-template>
+
+        <ng-template #expandedTemplate let-row let-columns="columns">
+          <div class="expanded-content">
+            <app-data-table-expanded-details
+              [items]="occurrenceExpandedItems(row)"
+              [visibleColumns]="columns"
+              [visibleRow]="row"
+              [visibleValue]="rowValueForExpandedDetails"
+            ></app-data-table-expanded-details>
+          </div>
+        </ng-template>
+
+        <ng-template #toolbar>
+          <button
+            type="button"
+            class="filter-panel-toggle"
+            [class.active]="filterPanelOpen()"
+            (click)="toggleExtendedFilters()"
+            aria-label="Toggle extended filtering"
+          >
+            <lucide-icon [img]="Filter" aria-hidden="true"></lucide-icon>
+            <span>Extended filtering</span>
+          </button>
+        </ng-template>
+
+        <ng-template #panel>
+          @if (filterPanelOpen()) {
+            <app-advanced-filter-panel
+              [fields]="advancedFields()"
+              [idPrefix]="'search-occurrences'"
+              (modeChange)="setFilterMode($event.key, $event.mode)"
+              (valueChange)="setFilterValue($event.key, $event.value)"
+              (selectionChange)="setMultiFilter($event.key, $event.values)"
+              (clearFilters)="clearFilters()"
+            ></app-advanced-filter-panel>
+          }
+        </ng-template>
+
+      <app-data-table
+        [columns]="columns"
+        [rows]="tableRows()"
+        [exportProvider]="exportAllOccurrences"
+        [exportFilenameBase]="'component_occurrences'"
+        [columnOrder]="columnOrder()"
+        [availableColumns]="availableColumns()"
+        [tablePanelOpen]="tablePanelOpen()"
+          [lockedColumns]="lockedColumns"
+          [filterRowVisible]="filterRowVisible()"
+          [filterVisible]="filterVisible()"
+          [columnFilters]="columnFilters()"
+          [sortColumn]="sortColumn()"
+          [sortDir]="sortDir()"
+          [toolbarTemplate]="toolbar"
+          [panelTemplate]="panel"
+          [rowContentTemplate]="rowContent"
+          [actionsTemplate]="actions"
+          [showActionsColumn]="true"
+          [expandable]="true"
+          [rowIdKey]="'componentId'"
+          [expandedRowIds]="expandedRows()"
+          [expandedDetails]="occurrenceExpandedDetailsForTable"
+          [expandedRowTemplate]="expandedTemplate"
+          [status]="status() === 'loading' ? 'loading' : status() === 'loaded' ? 'loaded' : 'loading'"
+          [loadingMessage]="'Searching...'"
+          [emptyMessage]="'No occurrences found.'"
+          [enableSorting]="true"
+          [showFilterToggle]="true"
+          [showTablePanel]="true"
+          [paginationEnabled]="true"
+          [pageSizeOptions]="pageSizeOptions"
+          [pageSize]="pageSize()"
+          [pageIndex]="pageIndex()"
+          [totalPages]="totalPages()"
+          (toggleTablePanel)="toggleTablePanel()"
+          (dropColumn)="dropColumn($event)"
+          (removeColumn)="removeColumn($event)"
+          (addColumn)="addColumn($event)"
+          (toggleFilter)="toggleFilter($event.key, $event.event)"
+          (setColumnFilter)="setColumnFilter($event.key, $event.event)"
+          (toggleSort)="toggleSort($event)"
+          (setPageSize)="setPageSize($event)"
+          (prevPage)="prevPage()"
+          (nextPage)="nextPage()"
+          (rowToggle)="toggleRowExpanded($event)"
+        ></app-data-table>
+      }
+    </mat-card-content>
+  </mat-card>
+</section>
