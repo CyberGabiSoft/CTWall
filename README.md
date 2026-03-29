@@ -3,7 +3,7 @@
 <img src="docs/images/ctwall-logo.png" width="200">
 </div>
 
-**CTWall(ChainThreatWall)** platform helps Security, DevOps, and Product teams make faster risk decisions in the software supply chain based on SBOM/BOM data.
+**CTWall (ChainThreatWall)** platform helps Security, DevOps, and Product teams make faster risk decisions in the software supply chain based on SBOM/BOM data.
 
 This tool helps You to:
 1. Get dependency risk visibility in one place.
