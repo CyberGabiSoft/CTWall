@@ -8,6 +8,9 @@ This tool helps You to:
 3. Keep history and evidence for audits.
 4. Reduce manual triage effort.
 
+![CTWall Dashboard](./docs/images/ctwall-dashboard.png)
+![CTWall Alerts](./docs/images/ctwall-alert.png)
+
 ## Platform purpose
 
 CTWall gives security and platform teams one operational place to:
@@ -17,6 +20,8 @@ CTWall gives security and platform teams one operational place to:
 3. Map components to malware intelligence and triage findings.
 4. Monitor posture and trends on project dashboards.
 5. Dispatch operational alerts to connectors (Jira, SMTP, Slack, SNS, external Alertmanager).
+
+![CTWall Connectors](./docs/images/ctwall-connectors.png)
 
 ## What happens in runtime
 
@@ -30,6 +35,8 @@ Typical flow:
 6. UI presents dashboards, posture, explorer, and triage state.
 
 CTWall is a practical supplement to classic SCA (Software Composition Analysis): it adds malware-focused detection in the software supply chain layer. By using free/public threat intelligence sources (for now it is only publicly available OSV database from https://osv.dev/), teams can generate notifications about newly observed dependency threats without building a custom intel pipeline from scratch.
+
+![CTWall SBOM Dependency Graph](./docs/images/ctwall-dependency-graph.png)
 
 ## Business Problems CTWall Solves
 
