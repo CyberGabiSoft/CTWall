@@ -1,8 +1,8 @@
 # CTWall - ChainThreatWall
-
+<div align="center">
 ![CTWall Logo](./docs/images/ctwall-logo.png)
-
-*** CTWall(ChainThreatWall) *** platform helps Security, DevOps, and Product teams make faster risk decisions in the software supply chain based on SBOM/BOM data.
+</div>
+**CTWall(ChainThreatWall)** platform helps Security, DevOps, and Product teams make faster risk decisions in the software supply chain based on SBOM/BOM data.
 
 This tool helps You to:
 1. Get dependency risk visibility in one place.
@@ -120,7 +120,7 @@ The biggest value comes from regular imports and revision comparison.
 
 Run from `src/ctwall`:
 
-*** For production complete: `Before Production (Required)`. ***
+**For production complete: `Before Production (Required)`.**
 
 ### 0) Prepare env files and permissions:
 
@@ -145,7 +145,7 @@ docker build -t ctwall-frontend:local -f frontend/docker/Dockerfile frontend
 
 
 ### 2) Start full stack (by default uses images from dockerhub)
-*** Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment. ***
+**Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment.**
 ```bash
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d
 ```
@@ -170,7 +170,7 @@ docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env down
 
 Run from `src/ctwall`.
 
-*** For production complete: `Before Production (Required)`. ***
+**For production complete: `Before Production (Required)`.**
 
 This Helm flow matches Docker Compose behavior: one chart deploys backend + frontend and can also run PostgreSQL.
 
@@ -207,7 +207,7 @@ kubectl -n "$NS" create secret tls ctwall-frontend-tls \
 ```
 
 ### 1) Install full stack from one chart:
-*** Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment. ***
+**Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment.**
 
 #### Option A) Install with defaults
 ```bash
