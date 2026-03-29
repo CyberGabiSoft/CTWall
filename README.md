@@ -8,6 +8,8 @@ This tool helps You to:
 3. Keep history and evidence for audits.
 4. Reduce manual triage effort.
 
+To ingest SBOMs into the platform, you can use DepAlert. [Depalert](https://github.com/CyberGabiSoft/DepAlert)
+
 ![CTWall Dashboard](./docs/images/ctwall-dashboard.png)
 ![CTWall Alerts](./docs/images/ctwall-alert.png)
 
@@ -116,8 +118,9 @@ The biggest value comes from regular imports and revision comparison.
 
 Run from `src/ctwall`:
 
-For production complete: `Before Production (Required)`.
-# 0) Prepare env files and permissions:
+*** For production complete: `Before Production (Required)`.***
+
+### 0) Prepare env files and permissions:
 
 ```bash
 chmod 0777 deploy/docker/backend-config
@@ -126,25 +129,26 @@ chmod 0666 deploy/docker/backend-config/alertmanager.yml
 ```
 
 
-# 1a) Pull published images (default in deploy/docker/.env)
+### 1a) Pull published images (default in deploy/docker/.env)
 ```bash
 docker pull cybergabi/ctwall-backend:1.0.0
 docker pull cybergabi/ctwall-frontend:1.0.0
 ```
 
-# 1b) (optional): build local images and override tags in deploy/docker/.env
+### 1b) (optional): build local images and override tags in deploy/docker/.env
 ```bash
 docker build -t ctwall-backend:local -f backend/docker/Dockerfile backend
 docker build -t ctwall-frontend:local -f frontend/docker/Dockerfile frontend
 ```
 
 
-# 2) Start full stack (by default uses images from dockerhub)
+### 2) Start full stack (by default uses images from dockerhub)
+*** Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment.***
 ```bash
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d
 ```
 
-# 3) Get admin credentials
+### 3) Get admin credentials
 ```bash
 docker run --rm -v ctwall_ctwall-backend-data:/data busybox cat /data/bootstrap-admin-credentials.json
 ```
@@ -155,7 +159,7 @@ Open UI at:
 https://127.0.0.1:8443
 ```
 
-# 4) Stop full stack
+### 4) Stop full stack
 ```bash
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env down
 ```
@@ -164,11 +168,11 @@ docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env down
 
 Run from `src/ctwall`.
 
-For production complete: `Before Production (Required)`.
+*** For production complete: `Before Production (Required)`. ***
 
 This Helm flow matches Docker Compose behavior: one chart deploys backend + frontend and can also run PostgreSQL.
 
-Prepare cluster namespace and chart dependencies:
+### 0) Prepare cluster namespace, chart and build dependencies:
 ```bash
 export NS=ctwall
 helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -200,7 +204,10 @@ kubectl -n "$NS" create secret tls ctwall-frontend-tls \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Install full stack from one chart:
+### 1) Install full stack from one chart:
+*** Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment.***
+
+#### Option A) Install with defaults
 ```bash
 helm upgrade --install ctwall ./helm/ctwall -n "$NS"
 ```
@@ -208,7 +215,7 @@ helm upgrade --install ctwall ./helm/ctwall -n "$NS"
 Note: this command creates Services. Frontend Ingress is optional and disabled by default (`frontend.ingress.enabled=false`).
 See `Ingress (optional)` below to enable it.
 
-Install full stack with explicit public image tags:
+#### Option B) Install full stack with explicit public image tags:
 ```bash
 helm upgrade --install ctwall ./helm/ctwall -n "$NS" \
   --set backend.image.repository=docker.io/cybergabi/ctwall-backend \
@@ -217,7 +224,7 @@ helm upgrade --install ctwall ./helm/ctwall -n "$NS" \
   --set frontend.image.tag=1.0.0
 ```
 
-Install full stack with explicit manually built images (for example after local `docker build`):
+#### Option C) Install full stack with explicit manually built images (for example after local `docker build`):
 ```bash
 helm upgrade --install ctwall ./helm/ctwall -n "$NS" \
   --set backend.image.repository=ctwall-backend \
@@ -233,7 +240,7 @@ Default behavior:
 2. deploys PostgreSQL in-cluster from `bitnami/postgresql` (`postgresql.enabled=true`),
 3. backend init flow generates runtime secrets on first start in backend config volume.
 
-Get bootstrap admin credentials after Helm install (one-liner):
+### 2) Get bootstrap admin credentials after Helm install (one-liner):
 ```bash
 NS="${NS:-ctwall}"; POD="$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=backend -o jsonpath='{.items[0].metadata.name}')"; EC="admin-creds-$(date +%s)"; kubectl -n "$NS" debug "$POD" --profile=restricted --target=backend --image=busybox:1.36 -c "$EC" --quiet -- cat /proc/1/root/app/data/bootstrap-admin-credentials.json >/dev/null; for i in $(seq 1 20); do OUT="$(kubectl -n "$NS" logs "$POD" -c "$EC" --tail=20 2>/dev/null)" && [ -n "$OUT" ] && { echo "$OUT"; break; }; sleep 1; done
 ```
@@ -243,7 +250,7 @@ Why this is needed: backend image is distroless (no `cat`/`sh`), so direct `kube
 
 If your kubectl binary is not named `kubectl`, pass it via `KUBECTL` (for example `KUBECTL="microk8s kubectl"`).
 
-## Ingress (optional)
+### 3) Ingress (optional)
 Unified chart exposes only frontend via Ingress. Backend API stays internal (ClusterIP service only).
 Frontend ingress is disabled by default; enable it when you want HTTP(S) access via an ingress controller
 (for example `ingress-nginx`).
