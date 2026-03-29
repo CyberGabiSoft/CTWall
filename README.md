@@ -1,6 +1,6 @@
 # CTWall - ChainThreatWall
 
-
+![CTWall Logo](./docs/images/ctwall-logo.png)
 
 *** CTWall(ChainThreatWall) *** platform helps Security, DevOps, and Product teams make faster risk decisions in the software supply chain based on SBOM/BOM data.
 
