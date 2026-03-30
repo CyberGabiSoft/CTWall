@@ -17,6 +17,8 @@ As more teams move to virtualized development environments to reduce software su
 
 **CTWall (ChainThreatWall)** platform helps Security, DevOps, and Product teams make risk decisions faster by using SBOM/BOM data to identify malware in the software supply chain. This tool is a practical supplement to classic SCA (Software Composition Analysis): it adds malware-focused detection in the software supply chain layer. By using free/public threat intelligence sources (for now it is only publicly available OSV database from https://osv.dev/), teams can generate notifications about newly observed dependency threats without building a custom intel pipeline from scratch.
 
+SBOMs can be easily imported into the platform using [DepAlert](https://github.com/CyberGabiSoft/DepAlert).
+
 ## Quick start
 See [00_quick_start.md](./docs/00_quick_start.md) for step-by-step instructions.
 
@@ -39,7 +41,8 @@ From an operational perspective, CTWall platform delivers useful functionality t
 <li>Dispatch operational alerts to connectors (Jira, SMTP, Slack, SNS, external Alertmanager).</li>
 </ul>
 
-SBOMs can be easily imported into the platform using [DepAlert](https://github.com/CyberGabiSoft/DepAlert).
+<br />
+<br />
 <p align="center">
   <a href="./docs/images/ctwall-dashboard.png">
     <img src="./docs/images/ctwall-dashboard.png" alt="CTWall Dashboard" width="32%" />
@@ -148,9 +151,6 @@ The biggest value comes from regular imports and revision comparison.
 - Backend: `backend`
 - Frontend: `frontend`
 - Unified Helm chart (backend + frontend + optional PostgreSQL): `helm/ctwall`
-
-## Other tools
-- Agent (DepAlert CLI): available as image `docker.io/cybergabi/depalert` (optional)
 
 
 ## Quick start (Docker Compose) - localhost
