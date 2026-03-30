@@ -452,3 +452,9 @@ Checklist (`src/ctwall/helm/ctwall`):
    - runtime `secrets.yaml` is stored on backend config volume and must survive pod restarts/upgrades.
 6. After first startup:
    - rotate bootstrap admin password immediately.
+
+## Security
+Please see ![CTWall Security](SECURITY.md)
+
+## License
+CTWall is licensed under the BSD 3-Clause License
