@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: docker.io/cybergabi/ctwall-backend
+  repository: docker.io/cybergabisoft/ctwall-backend
   pullPolicy: IfNotPresent
   tag: "1.0.0"
 
@@ -243,7 +243,7 @@ alertmanager:
     pullPolicy: IfNotPresent
   initImage:
     repository: busybox
-    tag: "1.36"
+    tag: "1.37.0"
     pullPolicy: IfNotPresent
   listenPort: 9093
   resources:

@@ -1,49 +1,82 @@
 # CTWall - ChainThreatWall
 <div align="center">
 <img src="docs/images/ctwall-logo.png" width="200">
+
+<table>
+    <tr styl="margin: 0; position: absolute; top: 50%; -ms-transform: translateY(-50%); transform: translateY(-50%);">
+        <th>
+            <p>
+                <a href="https://github.com/CyberGabiSoft/CTWall/releases/latest"><img src="https://img.shields.io/github/release/CyberGabiSoft/CTWall.svg" alt="GitHub release"></a>
+            </p>
+        </th>
+    </tr>
+ </table>
 </div>
 
-**CTWall (ChainThreatWall)** platform helps Security, DevOps, and Product teams make faster risk decisions in the software supply chain based on SBOM/BOM data.
+As more teams move to virtualized development environments to reduce software supply-chain risk, one challenge remains: malicious dependencies can still slip through and reach production.
 
-This tool helps You to:
-1. Get dependency risk visibility in one place.
-2. React faster to malware threats.
-3. Keep history and evidence for audits.
-4. Reduce manual triage effort.
+**CTWall (ChainThreatWall)** platform helps Security, DevOps, and Product teams make risk decisions faster by using SBOM/BOM data to identify malware in the software supply chain. This tool is a practical supplement to classic SCA (Software Composition Analysis): it adds malware-focused detection in the software supply chain layer. By using free/public threat intelligence sources (for now it is only publicly available OSV database from https://osv.dev/), teams can generate notifications about newly observed dependency threats without building a custom intel pipeline from scratch.
 
-To ingest SBOMs into the platform, you can use DepAlert. [Depalert](https://github.com/CyberGabiSoft/DepAlert)
-
-![CTWall Dashboard](./docs/images/ctwall-dashboard.png)
-![CTWall Alerts](./docs/images/ctwall-alert.png)
+## Quick start
+See [00_quick_start.md](./docs/00_quick_start.md) for step-by-step instructions.
 
 ## Platform purpose
 
-CTWall gives security and platform teams one operational place to:
+From a business perspective, tool helps You to:
+<ul>
+<li> Get dependency malware risk visibility in one place. </li>
+<li> React faster to malware threats. </li>
+<li> Keep history and evidence for audits. </li>
+<li> Reduce manual triage effort. </li>
+</ul>
 
-1. Ingest SBOMs from CI/CD and vendor channels.
-2. Keep revision history for each Product / Scope / Test.
-3. Map components to malware intelligence and triage findings.
-4. Monitor posture and trends on project dashboards.
-5. Dispatch operational alerts to connectors (Jira, SMTP, Slack, SNS, external Alertmanager).
+From an operational perspective, CTWall platform delivers useful functionality to:
+<ul>
+<li>Ingest SBOMs from CI/CD and vendor channels.</li>
+<li>Keep revision history for each Product / Scope / Test.</li>
+<li>Map components to malware intelligence and triage findings.</li>
+<li>Monitor posture and trends on project dashboards.</li>
+<li>Dispatch operational alerts to connectors (Jira, SMTP, Slack, SNS, external Alertmanager).</li>
+</ul>
 
-![CTWall Connectors](./docs/images/ctwall-connectors.png)
+SBOMs can be easily imported into the platform using [DepAlert](https://github.com/CyberGabiSoft/DepAlert).
+<p align="center">
+  <a href="./docs/images/ctwall-dashboard.png">
+    <img src="./docs/images/ctwall-dashboard.png" alt="CTWall Dashboard" width="32%" />
+  </a>
+  <a href="./docs/images/ctwall-alert.png">
+    <img src="./docs/images/ctwall-alert.png" alt="CTWall Alerts" width="32%" />
+  </a>
+  <a href="./docs/images/ctwall-connectors.png">
+    <img src="./docs/images/ctwall-connectors.png" alt="CTWall Connectors" width="32%" />
+  </a>
+</p>
 
 ## What happens in runtime
 
-Typical flow:
+Application flow:
+<ol>
+<li>SBOM is uploaded (or sent by agent).</li>
+<li>Revision and components are persisted.</li>
+<li>Background workers perform malware analysis.</li>
+<li>Alert groups/occurrences are updated.</li>
+<li>Configured connectors receive FIRING/RESOLVED signals.</li>
+<li>UI presents dashboards, posture, explorer, and triage state.</li>
+</ol>
+<br />
+<br />
 
-1. SBOM is uploaded (or sent by agent).
-2. Revision and components are persisted.
-3. Background workers perform malware analysis.
-4. Alert groups/occurrences are updated.
-5. Configured connectors receive FIRING/RESOLVED signals,
-6. UI presents dashboards, posture, explorer, and triage state.
+```mermaid
+flowchart LR
+    A[Product / Source] --> B[Generate SBOM/BOM]
+    B --> C[Import SBOM/BOM file to CTWALL]
+    C --> D[Alert]
+```
 
-CTWall is a practical supplement to classic SCA (Software Composition Analysis): it adds malware-focused detection in the software supply chain layer. By using free/public threat intelligence sources (for now it is only publicly available OSV database from https://osv.dev/), teams can generate notifications about newly observed dependency threats without building a custom intel pipeline from scratch.
+<br />
+<br />
 
-![CTWall SBOM Dependency Graph](./docs/images/ctwall-dependency-graph.png)
-
-## Business Problems CTWall Solves
+## Cybersecurity problems that CTWall solves
 
 1. **No continuous dependency risk monitoring (application + infrastructure).**
 CTWall collects SBOM/BOM data and organizes it in one model: Product -> Scope -> Test. In today's threat landscape, lack of continuous monitoring and delayed response to dependency threats can lead to compromise of both applications and infrastructure.
@@ -60,7 +93,7 @@ The platform stores SBOM revision history and events, making it easier to audit 
 5. **Too much manual triage.**
 Teams get structured results and can move faster from alert to decision.
 
-### Some Attack Examples CTWall Can Help You Detect
+## Some Attack Examples CTWall Can Help You Detect
 
 CTWall helps by correlating SBOM/BOM components with threat intelligence and malware advisories, then generating operational alerts.
 
@@ -78,6 +111,9 @@ Public OSV records describe exfiltration of environment variables/cloud tokens a
 
 5. **February 2026 npm malware case (`test-npm-style`, MAL-2026-771).**
 Public OSV/GHSA-linked records classify affected versions as malicious and recommend immediate secret rotation.
+<br />
+<br />
+![CTWall SBOM Dependency Graph](./docs/images/ctwall-dependency-graph.png)
 
 ## Applicaiton Flow
 
@@ -458,3 +494,6 @@ Please see ![CTWall Security](SECURITY.md)
 
 ## License
 CTWall is licensed under the BSD 3-Clause License
+
+## Want to get in touch or have questions?
+For questions, contact us at: cybergabisoft@gmail.com

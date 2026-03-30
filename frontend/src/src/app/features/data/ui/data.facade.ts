@@ -30,7 +30,7 @@ import { JiraEntitySettingsDialogComponent } from './jira-entity-settings-dialog
 import { DataStore } from '../state/data.store';
 import { DataApi } from '../data-access/data.api';
 import { MalwareAnalysisApi } from '../data-access/malware-analysis.api';
-import { MalwareResultSummary } from '../data-access/malware-analysis.types';
+import { ComponentAnalysisQueueItem, MalwareResultSummary } from '../data-access/malware-analysis.types';
 import {
   ComponentSummary,
   DataSection,
@@ -2291,24 +2291,28 @@ export abstract class DataFacade {
       mapSetValue(this.componentMalwareStatus(), componentPurl, 'loading')
     );
     try {
-      const mappings = await this.malwareApi.listFindings(componentPurl);
+      const [mappings, queueItems] = await Promise.all([
+        this.malwareApi.listFindings(componentPurl),
+        this.malwareApi.listQueue(componentPurl)
+      ]);
       const malwarePurls = mappings
         .map((mapping) => mapping.malwarePurl)
         .filter((purl) => purl && purl.length > 0);
       this.componentMalwareMappings.set(
         mapSetValue(this.componentMalwareMappings(), componentPurl, malwarePurls)
       );
-      if (malwarePurls.length === 0) {
-        this.componentMalwareResults.set(
-          mapSetValue(this.componentMalwareResults(), componentPurl, null)
-        );
-        this.componentMalwareStatus.set(
-          mapSetValue(this.componentMalwareStatus(), componentPurl, 'loaded')
-        );
-        return;
+      let result: MalwareResultSummary | null = null;
+      if (malwarePurls.length > 0) {
+        try {
+          const items = await this.malwareApi.listMalwareResults(malwarePurls[0]);
+          result = items[0] ?? null;
+        } catch {
+          // Fall back to queue/mapping-based summary when explorer results are unavailable.
+        }
       }
-      const items = await this.malwareApi.listMalwareResults(malwarePurls[0]);
-      const result = items[0] ?? null;
+      if (!result) {
+        result = this.buildFallbackComponentMalwareResult(componentPurl, malwarePurls, queueItems);
+      }
       this.componentMalwareResults.set(
         mapSetValue(this.componentMalwareResults(), componentPurl, result)
       );
@@ -2321,6 +2325,28 @@ export abstract class DataFacade {
         mapSetValue(this.componentMalwareStatus(), componentPurl, 'error')
       );
     }
+  }
+
+  private buildFallbackComponentMalwareResult(
+    componentPurl: string,
+    malwarePurls: string[],
+    queueItems: ComponentAnalysisQueueItem[]
+  ): MalwareResultSummary {
+    const latestCompleted = queueItems.find((item) => item.status === 'COMPLETED') ?? null;
+    const verdict: MalwareResultSummary['verdict'] =
+      malwarePurls.length > 0 ? 'MALWARE' : latestCompleted ? 'CLEAN' : 'UNKNOWN';
+    return {
+      id: `fallback:${componentPurl}`,
+      componentPurl,
+      verdict,
+      findingsCount: malwarePurls.length > 0 ? malwarePurls.length : verdict === 'UNKNOWN' ? null : 0,
+      scannedAt:
+        latestCompleted?.completedAt ??
+        latestCompleted?.updatedAt ??
+        latestCompleted?.createdAt ??
+        null,
+      validUntil: null
+    };
   }
 
   componentColumnValue(component: ComponentSummary, column: ComponentColumnKey): string {
@@ -2344,18 +2370,40 @@ export abstract class DataFacade {
       case 'supplier':
         return component.supplier ?? '-';
       case 'malwareVerdict': {
-        const result = this.getComponentMalwareResult(component.purl ?? '');
-        return result?.verdict ?? '-';
+        const purl = (component.purl ?? '').trim();
+        if (!purl) {
+          return '-';
+        }
+        this.ensureComponentMalwareResultForCell(purl);
+        const result = this.getComponentMalwareResult(purl);
+        if (result?.verdict) {
+          return result.verdict;
+        }
+        return 'UNKNOWN';
       }
       case 'malwareScannedAt': {
-        const result = this.getComponentMalwareResult(component.purl ?? '');
+        const purl = (component.purl ?? '').trim();
+        this.ensureComponentMalwareResultForCell(purl);
+        const result = this.getComponentMalwareResult(purl);
         return result?.scannedAt ?? '-';
       }
       case 'malwareValidUntil': {
-        const result = this.getComponentMalwareResult(component.purl ?? '');
+        const purl = (component.purl ?? '').trim();
+        this.ensureComponentMalwareResultForCell(purl);
+        const result = this.getComponentMalwareResult(purl);
         return result?.validUntil ?? '-';
       }
     }
+  }
+
+  private ensureComponentMalwareResultForCell(componentPurl: string): void {
+    if (!componentPurl) {
+      return;
+    }
+    if (this.getComponentMalwareStatus(componentPurl) !== 'idle') {
+      return;
+    }
+    void this.ensureComponentMalwareResult(componentPurl);
   }
 
   productColumnValue(
