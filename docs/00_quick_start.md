@@ -24,16 +24,7 @@ Run from `src/ctwall`:
 
 **For production complete: `Before Production (Required)`.**
 
-### 1. Prepare env files and permissions:
-
-```bash
-chmod 0777 deploy/docker/backend-config
-chmod 0666 deploy/docker/backend-config/config.yaml
-chmod 0666 deploy/docker/backend-config/alertmanager.yml
-```
-
-
-### 2. Get container images
+### 1. Get container images
 
 #### Pull published images (default in deploy/docker/.env)
 ```bash
@@ -50,21 +41,26 @@ docker build -t ctwall-frontend:local -f frontend/docker/Dockerfile frontend
 ```
 
 
-### 3. Start full stack (by default uses images from dockerhub)
+### 2. Start full stack (by default uses images from dockerhub)
 **Warning: This uses the default PostgreSQL credentials. Please change them before the first startup in a production environment.**
 ```bash
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d
 ```
 
-### 4. Get admin credentials
+### 3. Get admin credentials
 ```bash
-docker run --rm -v ctwall_ctwall-backend-data:/data busybox cat /data/bootstrap-admin-credentials.json
+docker run --rm -v ctwall_ctwall-backend-data:/data busybox:1.37.0 cat /data/bootstrap-admin-credentials.json
 ```
 
 Open UI at:
 
 ```text
 https://127.0.0.1:8443
+```
+
+### 4. Interact
+```bash
+Create product -> Create scope -> Import SBOM
 ```
 
 ### 5. Stop full stack
@@ -180,7 +176,7 @@ Default behavior:
 
 ### 3. Get bootstrap admin credentials after Helm install (one-liner):
 ```bash
-NS="${NS:-ctwall}"; POD="$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=backend -o jsonpath='{.items[0].metadata.name}')"; EC="admin-creds-$(date +%s)"; kubectl -n "$NS" debug "$POD" --profile=restricted --target=backend --image=busybox:1.36 -c "$EC" --quiet -- cat /proc/1/root/app/data/bootstrap-admin-credentials.json >/dev/null; for i in $(seq 1 20); do OUT="$(kubectl -n "$NS" logs "$POD" -c "$EC" --tail=20 2>/dev/null)" && [ -n "$OUT" ] && { echo "$OUT"; break; }; sleep 1; done
+NS="${NS:-ctwall}"; POD="$(kubectl -n "$NS" get pod -l app.kubernetes.io/name=backend -o jsonpath='{.items[0].metadata.name}')"; EC="admin-creds-$(date +%s)"; kubectl -n "$NS" debug "$POD" --profile=restricted --target=backend --image=busybox:1.37.0 -c "$EC" --quiet -- cat /proc/1/root/app/data/bootstrap-admin-credentials.json >/dev/null; for i in $(seq 1 20); do OUT="$(kubectl -n "$NS" logs "$POD" -c "$EC" --tail=20 2>/dev/null)" && [ -n "$OUT" ] && { echo "$OUT"; break; }; sleep 1; done
 ```
 
 Why this is needed: backend image is distroless (no `cat`/`sh`), so direct `kubectl exec ... cat` will fail.
@@ -233,6 +229,10 @@ echo "127.0.0.1 ctwall-frontend.local" | sudo tee -a /etc/hosts
 If `https://127.0.0.1` returns `404 page not found`, it is usually host mismatch (ingress is host-based).
 Use `https://ctwall-frontend.local` (or set `Host: ctwall-frontend.local`).
 
+### 5. Interact
+```bash
+Create product -> Create scope -> Import SBOM
+```
 
 ### (Optional) Helm with external PostgreSQL
 

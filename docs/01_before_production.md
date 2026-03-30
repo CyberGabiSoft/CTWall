@@ -26,7 +26,7 @@ Where `secrets.yaml` is for Docker Compose:
 2. It is stored in named volume `ctwall_ctwall-backend-data` (not in `.env`).
 3. Read current values with:
    ```bash
-   docker run --rm -v ctwall_ctwall-backend-data:/data busybox:1.36 cat /data/secrets.yaml
+   docker run --rm -v ctwall_ctwall-backend-data:/data busybox:1.37.0 cat /data/secrets.yaml
    ```
 4. Treat this file as runtime-managed by initializer (do not edit manually in normal operation).
 

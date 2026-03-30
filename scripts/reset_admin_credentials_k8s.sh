@@ -71,7 +71,7 @@ debug_read_backend_file() {
   k -n "${NAMESPACE}" debug "${backend_pod}" \
     --profile=restricted \
     --target=backend \
-    --image=busybox:1.36 \
+    --image=busybox:1.37.0 \
     -c "${ec_name}" \
     --quiet \
     -- cat "/proc/1/root${file_path}" >/dev/null
@@ -97,7 +97,7 @@ debug_write_backend_file_b64() {
   k -n "${NAMESPACE}" debug "${backend_pod}" \
     --profile=restricted \
     --target=backend \
-    --image=busybox:1.36 \
+    --image=busybox:1.37.0 \
     -c "${ec_name}" \
     --quiet \
     -- sh -lc "umask 077; echo '${payload_b64}' | base64 -d > '/proc/1/root${file_path}'; chmod 600 '/proc/1/root${file_path}'"

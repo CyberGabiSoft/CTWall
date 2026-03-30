@@ -14,6 +14,8 @@
  </table>
 </div>
 
+As more teams move to virtualized development environments to reduce software supply-chain risk, one challenge remains: malicious dependencies can still slip through and reach production.
+
 **CTWall (ChainThreatWall)** platform helps Security, DevOps, and Product teams make risk decisions faster by using SBOM/BOM data to identify malware in the software supply chain. This tool is a practical supplement to classic SCA (Software Composition Analysis): it adds malware-focused detection in the software supply chain layer. By using free/public threat intelligence sources (for now it is only publicly available OSV database from https://osv.dev/), teams can generate notifications about newly observed dependency threats without building a custom intel pipeline from scratch.
 
 ## Quick start
@@ -114,3 +116,5 @@ Public OSV/GHSA-linked records classify affected versions as malicious and recom
 <br />
 ![CTWall SBOM Dependency Graph](./docs/images/ctwall-dependency-graph.png)
 
+## Want to get in touch or have questions?
+For questions, contact us at: cybergabisoft@gmail.com
