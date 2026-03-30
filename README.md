@@ -6,7 +6,7 @@
     <tr styl="margin: 0; position: absolute; top: 50%; -ms-transform: translateY(-50%); transform: translateY(-50%);">
         <th>
             <p>
-                <a href="https://github.com/CyberGabiSoft/CTWall/releases/latest"><img src="https://img.shields.io/github/release/CyberGabiSoft/CTWall.svg" alt="GitHub release"></a>
+                <a href="https://github.com/CyberGabiSoft/CTWall/releases/latest">GitHub release</a>
             </p>
         </th>
     </tr>
