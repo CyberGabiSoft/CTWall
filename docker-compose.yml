@@ -37,7 +37,7 @@ services:
       - ctwall
 
   ctwall-initializer:
-    image: ${CTWALL_BACKEND_IMAGE:-docker.io/cybergabi/ctwall-backend:1.0.0}
+    image: ${CTWALL_BACKEND_IMAGE:-docker.io/cybergabisoft/ctwall-backend:1.0.0}
     container_name: ctwall-initializer
     restart: "no"
     depends_on:
@@ -54,7 +54,7 @@ services:
       - ctwall
 
   ctwall-backend:
-    image: ${CTWALL_BACKEND_IMAGE:-docker.io/cybergabi/ctwall-backend:1.0.0}
+    image: ${CTWALL_BACKEND_IMAGE:-docker.io/cybergabisoft/ctwall-backend:1.0.0}
     container_name: ctwall-backend
     restart: unless-stopped
     depends_on:
@@ -79,7 +79,7 @@ services:
       - ctwall
 
   ctwall-frontend:
-    image: ${CTWALL_FRONTEND_IMAGE:-docker.io/cybergabi/ctwall-frontend:1.0.0}
+    image: ${CTWALL_FRONTEND_IMAGE:-docker.io/cybergabisoft/ctwall-frontend:1.0.0}
     container_name: ctwall-frontend
     restart: unless-stopped
     depends_on:

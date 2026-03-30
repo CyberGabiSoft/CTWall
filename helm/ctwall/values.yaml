@@ -10,7 +10,7 @@ backend:
     DB_URL: 'postgres://{{ .Values.global.postgresql.auth.username }}:{{ .Values.global.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.global.postgresql.auth.database }}?sslmode=disable'
 
   image:
-    repository: docker.io/cybergabi/ctwall-backend
+    repository: docker.io/cybergabisoft/ctwall-backend
     tag: "1.0.0"
     pullPolicy: IfNotPresent
 
@@ -25,7 +25,7 @@ frontend:
   enabled: true
 
   image:
-    repository: docker.io/cybergabi/ctwall-frontend
+    repository: docker.io/cybergabisoft/ctwall-frontend
     tag: "1.0.0"
     pullPolicy: IfNotPresent
 

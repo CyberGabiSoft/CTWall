@@ -37,8 +37,8 @@ chmod 0666 deploy/docker/backend-config/alertmanager.yml
 
 #### Pull published images (default in deploy/docker/.env)
 ```bash
-docker pull cybergabi/ctwall-backend:1.0.0
-docker pull cybergabi/ctwall-frontend:1.0.0
+docker pull cybergabisoft/ctwall-backend:1.0.0
+docker pull cybergabisoft/ctwall-frontend:1.0.0
 ```
 
 OR
@@ -156,9 +156,9 @@ See `Ingress (optional)` below to enable it.
 #### Option B) Install full stack with explicit public image tags:
 ```bash
 helm upgrade --install ctwall ./helm/ctwall -n "$NS" \
-  --set backend.image.repository=docker.io/cybergabi/ctwall-backend \
+  --set backend.image.repository=docker.io/cybergabisoft/ctwall-backend \
   --set backend.image.tag=1.0.0 \
-  --set frontend.image.repository=docker.io/cybergabi/ctwall-frontend \
+  --set frontend.image.repository=docker.io/cybergabisoft/ctwall-frontend \
   --set frontend.image.tag=1.0.0
 ```
 
