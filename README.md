@@ -7,7 +7,6 @@
         <th>
             <p>
                 <a href="https://github.com/CyberGabiSoft/CTWall/releases/latest"><img src="https://img.shields.io/github/release/CyberGabiSoft/CTWall.svg" alt="GitHub release"></a>
-                <a href="https://bestpractices.coreinfrastructure.org/projects/-1"><img src="https://bestpractices.coreinfrastructure.org/projects/-1/badge" alt="CII Best Practices"></a>
             </p>
         </th>
     </tr>
