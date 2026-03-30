@@ -7,8 +7,8 @@
 *.csr
 
 # Local docker/deploy configuration overrides
-/deploy/docker/.env
-/deploy/docker/backend-config/secrets.yaml
+#/deploy/docker/.env
+#/deploy/docker/backend-config/secrets.yaml
 
 # Local TLS material generated for dev runs
 /tls/*
