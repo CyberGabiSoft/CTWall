@@ -9,7 +9,7 @@ metadata:
 spec:
   containers:
     - name: wget
-      image: busybox
+      image: busybox:1.37.0
       command: ['wget']
       args: ['--no-check-certificate', '-qO-', 'https://{{ include "ctwall-frontend.fullname" . }}:{{ .Values.service.port }}/']
   restartPolicy: Never

@@ -153,7 +153,7 @@ fi
 echo "[5/6] Writing refreshed bootstrap credentials file..."
 docker volume inspect "${BACKEND_DATA_VOLUME}" >/dev/null 2>&1 || docker volume create "${BACKEND_DATA_VOLUME}" >/dev/null
 printf '{\n  "email": "%s",\n  "password": "%s"\n}\n' "${ADMIN_EMAIL}" "${ADMIN_PASSWORD}" | \
-  docker run --rm -i -v "${BACKEND_DATA_VOLUME}:/data" busybox sh -c \
+  docker run --rm -i -v "${BACKEND_DATA_VOLUME}:/data" busybox:1.37.0 sh -c \
     "cat > ${CREDENTIALS_PATH} && chmod 600 ${CREDENTIALS_PATH}"
 
 echo "[6/6] Done."
@@ -165,4 +165,4 @@ echo
 echo "Login URL: https://127.0.0.1:8443"
 echo
 echo "Raw credentials file:"
-docker run --rm -v "${BACKEND_DATA_VOLUME}:/data" busybox cat "${CREDENTIALS_PATH}"
+docker run --rm -v "${BACKEND_DATA_VOLUME}:/data" busybox:1.37.0 cat "${CREDENTIALS_PATH}"

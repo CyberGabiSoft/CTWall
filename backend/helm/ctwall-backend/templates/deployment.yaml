@@ -65,6 +65,8 @@ spec:
           {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /usr/local/bin/ctwall-backend
           {{- if or .Values.env .Values.extraEnv }}
           env:
             - name: CTWALL_INIT_ONLY
@@ -112,6 +114,8 @@ spec:
           {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /usr/local/bin/ctwall-backend
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
