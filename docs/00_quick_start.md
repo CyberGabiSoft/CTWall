@@ -46,6 +46,8 @@ docker build -t ctwall-frontend:local -f frontend/docker/Dockerfile frontend
 ```bash
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d
 ```
+If .env is missing add it to deploy/docker/.env based on template:
+https://github.com/CyberGabiSoft/CTWall/blob/main/deploy/docker/.env
 
 ### 3. Get admin credentials
 ```bash
