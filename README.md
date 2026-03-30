@@ -116,6 +116,7 @@ Public OSV records describe exfiltration of environment variables/cloud tokens a
 Public OSV/GHSA-linked records classify affected versions as malicious and recommend immediate secret rotation.
 <br />
 <br />
+
 ![CTWall SBOM Dependency Graph](./docs/images/ctwall-dependency-graph.png)
 
 ## Security
