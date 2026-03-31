@@ -22,6 +22,6 @@ Upload SBOM and create/update Product/Scope/Test with a new TestRevision.
 
 ## UX rules
 - Upload is enabled only after Product + Scope + Test name are provided and the SBOM file is fully loaded + parsed (JSON validation).
-- Manual ingestion accepts `bom.json` (JSON) for now.
-- Supported SBOM standards in import flow: `CycloneDX`, `SPDX`, `SWID` (JSON payloads).
+- Manual ingestion accepts SBOM files with any filename extension; payload must still be valid JSON.
+- Supported SBOM standards in import flow: `CycloneDX`, `SPDX` (JSON payloads).
 - Shows indeterminate progress bar during parse/upload and a green check after completion.

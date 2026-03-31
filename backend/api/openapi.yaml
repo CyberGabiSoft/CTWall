@@ -421,6 +421,36 @@ components:
             type: object
         properties:
           type: object
+        malwareVerdict:
+          type: string
+          maxLength: 120
+          enum: [MALWARE, CLEAN, UNKNOWN]
+        malwareFindingsCount:
+          type: integer
+        malwareScannedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        malwareValidUntil:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
+        malwarePurls:
+          type: array
+          items:
+            type: string
+            maxLength: 2048
+        malwareQueueStatus:
+          type: string
+          maxLength: 120
+          nullable: true
+        malwareQueueCompletedAt:
+          type: string
+          maxLength: 120
+          format: date-time
+          nullable: true
         createdAt:
           type: string
           maxLength: 120
@@ -3373,6 +3403,11 @@ paths:
           schema:
             type: integer
             default: 50
+        - name: all
+          in: query
+          schema:
+            type: boolean
+            default: false
         - name: q
           in: query
           schema:

@@ -72,12 +72,23 @@ describe('security-sources.mapper', () => {
   });
 
   it('maps finding values and details', () => {
-    const finding = createFinding({ resultFilename: 'results.json', evidence: 'osv:malware' });
+    const finding = createFinding({
+      resultFilename: 'results.json',
+      evidence: 'osv:malware',
+      detailsJson: {
+        id: 'MAL-LEFTPAD',
+        affected: [
+          { package: { purl: 'pkg:npm/leftpad' }, versions: ['1.0.0', '1.0.1'] },
+        ],
+      },
+    });
     expect(findingValue(finding, 'componentPurl')).toContain('pkg:npm');
     expect(findingDisplayValue(finding, 'resultFilename')).toBe('results.json');
+    expect(findingDisplayValue(finding, 'detectVersion')).toBe('1.0.0, 1.0.1');
     expect(findingsDetailRows(finding).some((detail) => detail.label === 'Component PURL')).toBe(true);
+    expect(findingsDetailRows(finding).some((detail) => detail.label === 'Detect version')).toBe(true);
     expect(findingsEvidence(finding)).toBe('osv:malware');
-    expect(findingsDetailsJson(finding)).toContain('malwarePurl');
+    expect(findingsDetailsJson(finding)).toContain('MAL-LEFTPAD');
   });
 
   it('builds recompute history rows and detail map', () => {
@@ -127,31 +138,27 @@ describe('security-sources.mapper', () => {
         componentPurl: 'contains',
         resultFilename: 'contains',
         detectVersion: 'select',
-        fixedVersion: 'contains',
         isMalware: 'select',
       },
       {
         componentPurl: 'pkg:npm',
         resultFilename: '',
         detectVersion: '',
-        fixedVersion: '',
         isMalware: '',
       },
       {
         componentPurl: [],
         resultFilename: [],
         detectVersion: ['1.2.3'],
-        fixedVersion: [],
         isMalware: ['Yes'],
       },
       {
         detectVersion: ['1.2.3'],
-        fixedVersion: ['2.0.0'],
         isMalware: ['Yes', 'No'],
       }
     );
-    expect(fields).toHaveLength(5);
+    expect(fields).toHaveLength(4);
     expect(fields[0]?.key).toBe('componentPurl');
-    expect(fields[4]?.options).toContain('Yes');
+    expect(fields[3]?.options).toContain('Yes');
   });
 });

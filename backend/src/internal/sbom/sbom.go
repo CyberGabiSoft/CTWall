@@ -19,7 +19,6 @@ type Producer string
 const (
 	StandardCycloneDX Standard = "cyclonedx"
 	StandardSPDX      Standard = "spdx"
-	StandardSWID      Standard = "swid"
 )
 
 const (
@@ -116,7 +115,7 @@ type ComponentProperties struct {
 func NormalizeStandard(value string) (Standard, error) {
 	clean := strings.ToLower(strings.TrimSpace(value))
 	switch Standard(clean) {
-	case StandardCycloneDX, StandardSPDX, StandardSWID:
+	case StandardCycloneDX, StandardSPDX:
 		return Standard(clean), nil
 	case "":
 		return "", nil
@@ -197,9 +196,6 @@ func Parse(data []byte) (*Document, error) {
 	}
 	if _, ok := root["spdxVersion"]; ok {
 		return parseSPDX(root)
-	}
-	if _, ok := root["tagId"]; ok {
-		return parseSWID(root)
 	}
 	return nil, errors.New("unsupported sbom format")
 }
@@ -604,68 +600,6 @@ func parseSpdxPackage(raw json.RawMessage, relationships map[string][]Relationsh
 	}
 
 	return component, nil
-}
-
-func parseSWID(root map[string]json.RawMessage) (*Document, error) {
-	var name string
-	_ = json.Unmarshal(root["name"], &name)
-	var version string
-	_ = json.Unmarshal(root["version"], &version)
-	var tagID string
-	_ = json.Unmarshal(root["tagId"], &tagID)
-
-	specVersion := "unknown"
-	if raw := root["tagVersion"]; len(raw) > 0 {
-		var rawValue any
-		if err := json.Unmarshal(raw, &rawValue); err == nil {
-			switch val := rawValue.(type) {
-			case string:
-				specVersion = val
-			case float64:
-				specVersion = strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", val), "0"), ".")
-			}
-		}
-	}
-	normalizedSpec, err := NormalizeSpecVersion(specVersion)
-	if err != nil {
-		normalizedSpec = "unknown"
-	}
-
-	identifier := strings.TrimSpace(name)
-	if identifier == "" {
-		identifier = strings.TrimSpace(tagID)
-	}
-	if identifier == "" {
-		identifier = "unknown"
-	}
-	if strings.TrimSpace(version) == "" {
-		version = "unknown"
-	}
-	purl := buildGenericPURL(identifier, version)
-
-	component := Component{
-		Name:     identifier,
-		Version:  version,
-		PURL:     purl,
-		Type:     "application",
-		SbomType: "application",
-		Properties: ComponentProperties{
-			BomRef: tagID,
-		},
-	}
-
-	if raw, err := json.Marshal(root); err == nil {
-		component.Original = raw
-	}
-
-	return &Document{
-		Type: Type{
-			Standard:    StandardSWID,
-			SpecVersion: normalizedSpec,
-		},
-		Producer:   ProducerOther,
-		Components: []Component{component},
-	}, nil
 }
 
 func parseSpdxSpecVersion(value string) string {

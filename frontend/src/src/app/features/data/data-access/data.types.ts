@@ -86,6 +86,14 @@ export interface ComponentSummary {
   supplier?: string | null;
   licenses?: unknown | null;
   properties?: unknown | null;
+  malwareVerdict?: 'MALWARE' | 'CLEAN' | 'UNKNOWN' | string | null;
+  malwareFindingsCount?: number | null;
+  malwareTriageStatus?: string | null;
+  malwareScannedAt?: string | null;
+  malwareValidUntil?: string | null;
+  malwarePurls?: string[] | null;
+  malwareQueueStatus?: string | null;
+  malwareQueueCompletedAt?: string | null;
   createdAt?: string | null;
 }
 

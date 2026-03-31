@@ -1,6 +1,7 @@
 server {
     listen ${FRONTEND_HTTP_PORT};
     server_name _;
+    client_max_body_size ${FRONTEND_CLIENT_MAX_BODY_SIZE};
 
     root /usr/share/nginx/html;
     index index.html;
@@ -39,6 +40,7 @@ server {
 server {
     listen ${FRONTEND_SSL_PORT} ssl;
     server_name _;
+    client_max_body_size ${FRONTEND_CLIENT_MAX_BODY_SIZE};
     ssl_certificate ${FRONTEND_SSL_CERT_PATH};
     ssl_certificate_key ${FRONTEND_SSL_KEY_PATH};
     ssl_session_cache shared:SSL:10m;

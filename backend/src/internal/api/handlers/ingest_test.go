@@ -725,3 +725,33 @@ func TestIngestComponentSupplierMapping(t *testing.T) {
 		t.Fatalf("supplier mismatch: got %q want %q", stored.Supplier, expected.Properties.Supplier)
 	}
 }
+
+func TestIngestHandler_AcceptsSbomCDXUpload(t *testing.T) {
+	pgStore, _ := tests.NewPostgresTestStore(t)
+	handler := IngestHandler(pgStore, IngestConfig{EnqueueWorkers: 1})
+
+	sbomData := loadSBOMFixture(t, "sbom.cdx")
+	req := newMultipartRequest(t, map[string]string{
+		"product": "CDX Product",
+		"scope":   "CDX Scope",
+		"test":    "CDX Test",
+	}, nil, "tags", true, "sbom.cdx", sbomData)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, withAuthedRequest(t, pgStore, req))
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d (body=%s)", recorder.Code, recorder.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.NewDecoder(recorder.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	imported, ok := resp["componentsImportedCount"].(float64)
+	if !ok {
+		t.Fatalf("missing componentsImportedCount in response: %#v", resp)
+	}
+	if imported <= 0 {
+		t.Fatalf("expected imported components > 0, got %v", imported)
+	}
+}

@@ -2,7 +2,7 @@
   <div class="ingest-header ctw-panel ctw-panel--padded ctw-shell-header">
     <div class="ctw-shell-copy">
       <h2 class="ctw-shell-title">Import</h2>
-      <p class="ctw-shell-subtitle">Upload a vendor SBOM (`bom.json`) and create a new Test revision.</p>
+      <p class="ctw-shell-subtitle">Upload a vendor SBOM file and create a new Test revision.</p>
     </div>
     <div class="header-meta ctw-shell-meta-block">
       <span>Requires Writer access.</span>
@@ -108,13 +108,12 @@
         <div class="form-section">
           <div class="section-header">
             <h3>SBOM file</h3>
-            <p>Drag &amp; drop or browse a JSON SBOM file.</p>
+            <p>Drag &amp; drop or browse an SBOM file.</p>
           </div>
           <div class="supported-sbom-types" role="note" aria-label="Supported SBOM standards">
             <span class="supported-sbom-types__label">Supported standards:</span>
             <span class="supported-sbom-types__chip">CycloneDX</span>
             <span class="supported-sbom-types__chip">SPDX</span>
-            <span class="supported-sbom-types__chip">SWID</span>
           </div>
           <div
             class="dropzone"
@@ -133,7 +132,6 @@
               #fileInput
               class="file-input"
               type="file"
-              accept=".json,application/json"
               (change)="onFileSelected($event)"
             />
             <div class="dropzone-content">
@@ -141,7 +139,7 @@
                 <lucide-icon [img]="Upload" aria-hidden="true"></lucide-icon>
               </div>
               <div class="dropzone-text">
-                <strong>Drop `bom.json` here</strong>
+                <strong>Drop SBOM file here</strong>
                 <span>or click to choose a file</span>
               </div>
             </div>

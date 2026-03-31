@@ -24,6 +24,7 @@ COPY --from=builder /workspace/dist/ctwall/browser /usr/share/nginx/html
 ENV BACKEND_UPSTREAM=http://127.0.0.1:8080 \
     FRONTEND_HTTP_PORT=8080 \
     FRONTEND_SSL_PORT=443 \
+    FRONTEND_CLIENT_MAX_BODY_SIZE=50m \
     FRONTEND_SSL_CERT_PATH=/etc/nginx/certs/tls.crt \
     FRONTEND_SSL_KEY_PATH=/etc/nginx/certs/tls.key \
     FRONTEND_SSL_AUTO_GENERATE=true \

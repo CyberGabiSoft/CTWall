@@ -17,6 +17,7 @@ const baseState: DataComponentFilterState = {
     publisher: '',
     supplier: '',
     malwareVerdict: '',
+    malwareTriageStatus: '',
     malwareScannedAt: '',
     malwareValidUntil: ''
   },
@@ -31,6 +32,7 @@ const baseState: DataComponentFilterState = {
     publisher: 'contains',
     supplier: 'contains',
     malwareVerdict: 'contains',
+    malwareTriageStatus: 'contains',
     malwareScannedAt: 'contains',
     malwareValidUntil: 'contains'
   },

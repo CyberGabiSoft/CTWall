@@ -385,7 +385,6 @@ export abstract class IngestFacade {
 
     const maxBytes = 50 * 1024 * 1024;
     const fileName = file.name ?? '';
-    const lowerName = fileName.toLowerCase();
 
     if (file.size === 0) {
       this.parseError.set('Selected file is empty.');
@@ -394,11 +393,6 @@ export abstract class IngestFacade {
     }
     if (file.size > maxBytes) {
       this.parseError.set('File exceeds 50 MB limit for manual ingestion.');
-      this.isParsing.set(false);
-      return;
-    }
-    if (!lowerName.endsWith('.json')) {
-      this.parseError.set('Manual ingestion accepts JSON SBOM files (bom.json).');
       this.isParsing.set(false);
       return;
     }

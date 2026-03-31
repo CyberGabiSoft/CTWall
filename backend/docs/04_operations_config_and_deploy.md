@@ -104,7 +104,7 @@ Build image from `src/ctwall`:
 docker build -t ctwall-backend:local -f backend/docker/Dockerfile backend
 
 # Option B: pull published image
-docker pull cybergabisoft/ctwall-backend:1.0.0
+docker pull cybergabisoft/ctwall-backend:1.1.0
 ```
 
 Run backend via Docker Compose (recommended):
@@ -134,6 +134,9 @@ Notes:
 - Runtime config file should stay non-secret and contain only operational settings.
 - Backend writes resolved/generated runtime secrets to `CTWALL_SECRETS_PATH`.
 - Runtime data path defaults to `/app/data/blob_storage` via bundled config.
+- In Docker Compose mode backend `DB_URL` is assembled from `.env` values:
+  - `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_SSLMODE`.
+  - Keep DB password only in `POSTGRES_PASSWORD` (single source of truth).
 - On first run backend can generate missing runtime secrets directly in `CTWALL_SECRETS_PATH`.
 - Startup SQL migrations can be auto-applied by backend when:
   - `database.auto_apply_on_start=true`,

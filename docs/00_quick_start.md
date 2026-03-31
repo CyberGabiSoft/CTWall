@@ -28,8 +28,8 @@ Run from `src/ctwall`:
 
 #### Pull published images (default in deploy/docker/.env)
 ```bash
-docker pull cybergabisoft/ctwall-backend:1.0.0
-docker pull cybergabisoft/ctwall-frontend:1.0.0
+docker pull cybergabisoft/ctwall-backend:1.1.0
+docker pull cybergabisoft/ctwall-frontend:1.1.0
 ```
 
 OR
@@ -46,6 +46,9 @@ docker build -t ctwall-frontend:local -f frontend/docker/Dockerfile frontend
 ```bash
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d
 ```
+Backend database DSN is composed automatically from `.env` variables:
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_SSLMODE`.
+Do not maintain a separate `DB_URL` in `.env`.
 If .env is missing add it to deploy/docker/.env based on template:
 https://github.com/CyberGabiSoft/CTWall/blob/main/deploy/docker/.env
 
@@ -74,12 +77,13 @@ docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env down
 
 Run from `src/ctwall`.
 
-1. Point backend config to your external database in `deploy/docker/backend-config/config.yaml`:
-
-```yaml
-database:
-  url: "postgres://USER:PASSWORD@YOUR-DB-HOST:5432/YOUR_DB?sslmode=require"
-```
+1. Configure external DB in `deploy/docker/.env`:
+   - `POSTGRES_HOST=your-postgres-host`
+   - `POSTGRES_PORT=5432`
+   - `POSTGRES_DB=your_db`
+   - `POSTGRES_USER=your_user`
+   - `POSTGRES_PASSWORD=your_password`
+   - `POSTGRES_SSLMODE=require`
 
 2. Start stack in external-DB mode (bundled PostgreSQL disabled):
 

@@ -21,20 +21,13 @@ Rules:
 
 Checklist (`src/ctwall/deploy/docker`):
 
-Where `secrets.yaml` is for Docker Compose:
-1. Runtime path is `/app/data/secrets.yaml` (`CTWALL_SECRETS_PATH` in `docker-compose.yml`).
-2. It is stored in named volume `ctwall_ctwall-backend-data` (not in `.env`).
-3. Read current values with:
-   ```bash
-   docker run --rm -v ctwall_ctwall-backend-data:/data busybox:1.37.0 cat /data/secrets.yaml
-   ```
-4. Treat this file as runtime-managed by initializer (do not edit manually in normal operation).
-
 1. Update PostgreSQL password in `.env`:
    - `POSTGRES_PASSWORD` must not be `change-me-postgres`.
-2. Update backend DB DSN in `backend-config/config.yaml`:
-   - `database.url` must match real DB credentials and host.
-   - use TLS-enabled DSN in non-local environments (for example `sslmode=require`).
+2. Keep database credentials in one place: `deploy/docker/.env` only:
+   - `POSTGRES_PASSWORD` (required),
+   - `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`,
+   - `POSTGRES_SSLMODE` (`require` in non-local environments).
+   - Docker Compose builds backend `DB_URL` automatically from these values.
 3. Disable local-dev connector relaxations in `.env`:
    - `ALERTING_ALLOW_INSECURE_SMTP=false`
    - `ALERTING_ALLOW_HTTP_TARGETS=false`
@@ -62,7 +55,6 @@ Checklist (`src/ctwall/helm/ctwall`):
 
 1. Set PostgreSQL auth values before install:
    - `global.postgresql.auth.password`
-   - `postgresql.auth.password`
    - never keep `change-me-postgres`.
 2. If using external PostgreSQL:
    - set `postgresql.enabled=false`

@@ -133,19 +133,27 @@ type TestRevision struct {
 
 // Component represents a software dependency found in an SBOM.
 type Component struct {
-	ID           uuid.UUID       `json:"id" db:"id"`
-	RevisionID   uuid.UUID       `json:"revisionId" db:"revision_id"`
-	PURL         string          `json:"purl" db:"purl"`
-	PkgName      string          `json:"pkgName" db:"pkg_name"`
-	Version      string          `json:"version" db:"version"`
-	PkgType      string          `json:"pkgType" db:"pkg_type"`
-	PkgNamespace string          `json:"pkgNamespace,omitempty" db:"pkg_namespace"`
-	SbomType     string          `json:"sbomType,omitempty" db:"sbom_type"`
-	Publisher    string          `json:"publisher,omitempty" db:"publisher"`
-	Supplier     string          `json:"supplier,omitempty" db:"supplier"`
-	Licenses     json.RawMessage `json:"licenses,omitempty" db:"licenses"`
-	Properties   json.RawMessage `json:"properties,omitempty" db:"properties"`
-	CreatedAt    time.Time       `json:"createdAt" db:"created_at"`
+	ID                      uuid.UUID       `json:"id" db:"id"`
+	RevisionID              uuid.UUID       `json:"revisionId" db:"revision_id"`
+	PURL                    string          `json:"purl" db:"purl"`
+	PkgName                 string          `json:"pkgName" db:"pkg_name"`
+	Version                 string          `json:"version" db:"version"`
+	PkgType                 string          `json:"pkgType" db:"pkg_type"`
+	PkgNamespace            string          `json:"pkgNamespace,omitempty" db:"pkg_namespace"`
+	SbomType                string          `json:"sbomType,omitempty" db:"sbom_type"`
+	Publisher               string          `json:"publisher,omitempty" db:"publisher"`
+	Supplier                string          `json:"supplier,omitempty" db:"supplier"`
+	Licenses                json.RawMessage `json:"licenses,omitempty" db:"licenses"`
+	Properties              json.RawMessage `json:"properties,omitempty" db:"properties"`
+	MalwareVerdict          string          `json:"malwareVerdict,omitempty" db:"malware_verdict"`
+	MalwareFindingsCount    int             `json:"malwareFindingsCount,omitempty" db:"malware_findings_count"`
+	MalwareTriageStatus     string          `json:"malwareTriageStatus,omitempty" db:"malware_triage_status"`
+	MalwareScannedAt        *time.Time      `json:"malwareScannedAt,omitempty" db:"malware_scanned_at"`
+	MalwareValidUntil       *time.Time      `json:"malwareValidUntil,omitempty" db:"malware_valid_until"`
+	MalwarePURLs            []string        `json:"malwarePurls,omitempty" db:"malware_purls"`
+	MalwareQueueStatus      string          `json:"malwareQueueStatus,omitempty" db:"malware_queue_status"`
+	MalwareQueueCompletedAt *time.Time      `json:"malwareQueueCompletedAt,omitempty" db:"malware_queue_completed_at"`
+	CreatedAt               time.Time       `json:"createdAt" db:"created_at"`
 }
 
 // User represents an authenticated system user.

@@ -7,11 +7,14 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"backend/internal/store"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -401,23 +404,63 @@ func (s *Service) processJob(ctx context.Context, componentPURL string) error {
 	}
 
 	now := time.Now().UTC()
-	results, err := s.store.ListAnalysisResultsForComponentMatch(componentPURL)
-	if err != nil {
-		return err
-	}
-	for _, result := range results {
-		matchType := store.ComponentAnalysisMatchContainsPrefix
-		if strings.EqualFold(result.ComponentPURL, componentPURL) {
-			matchType = store.ComponentAnalysisMatchExact
-		}
-		_, err := s.store.UpsertComponentAnalysisFinding(store.ComponentAnalysisFindingInput{
-			ComponentPURL:              componentPURL,
-			MalwarePURL:                result.ComponentPURL,
-			SourceMalwareInputResultID: result.ID,
-			MatchType:                  matchType,
-		})
+	if matcher, ok := s.store.(malwareMatchCandidateLister); ok {
+		candidates, err := matcher.ListMalwareMatchCandidates(componentPURL)
 		if err != nil {
 			return err
+		}
+		inputByMalware := make(map[string]store.ComponentAnalysisFindingInput, len(candidates))
+		for _, candidate := range candidates {
+			matched, matchType, malwarePURL := matchSmart(componentPURL, candidate)
+			if !matched {
+				continue
+			}
+			malwarePURL = strings.TrimSpace(malwarePURL)
+			if malwarePURL == "" || candidate.SourceMalwareInputResultID == uuid.Nil {
+				continue
+			}
+			next := store.ComponentAnalysisFindingInput{
+				ComponentPURL:              componentPURL,
+				MalwarePURL:                malwarePURL,
+				SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
+				MatchType:                  matchType,
+			}
+			if prev, ok := inputByMalware[malwarePURL]; !ok || matchPriority(next.MatchType) > matchPriority(prev.MatchType) {
+				inputByMalware[malwarePURL] = next
+			}
+		}
+
+		malwarePURLs := make([]string, 0, len(inputByMalware))
+		for malwarePURL := range inputByMalware {
+			malwarePURLs = append(malwarePURLs, malwarePURL)
+		}
+		sort.Strings(malwarePURLs)
+		for _, malwarePURL := range malwarePURLs {
+			input := inputByMalware[malwarePURL]
+			if _, err := s.store.UpsertComponentAnalysisFinding(input); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Compatibility fallback for non-Postgres/in-memory stubs that don't expose raw candidates.
+		results, err := s.store.ListAnalysisResultsForComponentMatch(componentPURL)
+		if err != nil {
+			return err
+		}
+		for _, result := range results {
+			matchType := store.ComponentAnalysisMatchContainsPrefix
+			if strings.EqualFold(result.ComponentPURL, componentPURL) {
+				matchType = store.ComponentAnalysisMatchExact
+			}
+			_, err := s.store.UpsertComponentAnalysisFinding(store.ComponentAnalysisFindingInput{
+				ComponentPURL:              componentPURL,
+				MalwarePURL:                result.ComponentPURL,
+				SourceMalwareInputResultID: result.ID,
+				MatchType:                  matchType,
+			})
+			if err != nil {
+				return err
+			}
 		}
 	}
 

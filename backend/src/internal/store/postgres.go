@@ -1318,9 +1318,48 @@ func (s *PostgresStore) ListComponents(testID uuid.UUID) ([]models.Component, er
 
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT c.id, c.revision_id, c.purl, c.pkg_name, c.version, c.pkg_type, COALESCE(c.pkg_namespace, ''),
-		        c.sbom_type, COALESCE(c.publisher, ''), COALESCE(c.supplier, ''), COALESCE(c.licenses, '[]'::jsonb), COALESCE(c.properties, '{}'::jsonb), c.created_at
+		        c.sbom_type, COALESCE(c.publisher, ''), COALESCE(c.supplier, ''), COALESCE(c.licenses, '[]'::jsonb), COALESCE(c.properties, '{}'::jsonb),
+		        CASE
+		          WHEN COALESCE(mf.malware_count, 0) > 0 THEN 'MALWARE'
+		          WHEN cs.component_purl IS NOT NULL THEN 'CLEAN'
+		          ELSE 'UNKNOWN'
+		        END AS malware_verdict,
+		        COALESCE(mf.malware_count, 0) AS malware_findings_count,
+		        COALESCE(mf.malware_triage_status, '') AS malware_triage_status,
+		        cs.scanned_at AS malware_scanned_at,
+		        cs.valid_until AS malware_valid_until,
+		        COALESCE(to_jsonb(mf.malware_purls), '[]'::jsonb) AS malware_purls,
+		        COALESCE(lq.status, '') AS malware_queue_status,
+		        lq.completed_at AS malware_queue_completed_at,
+		        c.created_at
 		 FROM components c
 		 JOIN test_revisions tr ON tr.id = c.revision_id
+		 LEFT JOIN LATERAL (
+		   SELECT COUNT(*)::int AS malware_count,
+		          ARRAY_AGG(DISTINCT f.malware_purl ORDER BY f.malware_purl) AS malware_purls,
+		          CASE
+		            WHEN COUNT(*) = 0 THEN ''
+		            WHEN COUNT(DISTINCT COALESCE(tg.status, 'OPEN')) = 1 THEN MIN(COALESCE(tg.status, 'OPEN'))
+		            ELSE 'MIXED'
+		          END AS malware_triage_status
+		     FROM component_analysis_malware_findings f
+		     JOIN source_malware_input_results r
+		       ON r.id = f.source_malware_input_result_id
+		     LEFT JOIN component_malware_findings_triage tg
+		       ON tg.test_id = tr.test_id
+		      AND tg.component_purl = f.component_purl
+		      AND tg.malware_purl = f.malware_purl
+		    WHERE r.verdict = 'MALWARE'
+		      AND f.component_purl = c.purl
+		 ) mf ON TRUE
+		 LEFT JOIN component_analysis_malware_component_state cs ON cs.component_purl = c.purl
+		 LEFT JOIN LATERAL (
+		   SELECT q.status, q.completed_at
+		     FROM component_analysis_malware_queue q
+		    WHERE q.component_purl = c.purl
+		    ORDER BY q.created_at DESC, q.id DESC
+		    LIMIT 1
+		 ) lq ON TRUE
 		 WHERE tr.test_id = $1 AND tr.is_active = TRUE
 		 ORDER BY c.pkg_name, c.version`, testID)
 	if err != nil {
@@ -1331,6 +1370,10 @@ func (s *PostgresStore) ListComponents(testID uuid.UUID) ([]models.Component, er
 	components := make([]models.Component, 0)
 	for rows.Next() {
 		var component models.Component
+		var malwareScannedAt sql.NullTime
+		var malwareValidUntil sql.NullTime
+		var malwareQueueCompletedAt sql.NullTime
+		var malwarePURLsRaw []byte
 		if err := rows.Scan(
 			&component.ID,
 			&component.RevisionID,
@@ -1344,9 +1387,34 @@ func (s *PostgresStore) ListComponents(testID uuid.UUID) ([]models.Component, er
 			&component.Supplier,
 			&component.Licenses,
 			&component.Properties,
+			&component.MalwareVerdict,
+			&component.MalwareFindingsCount,
+			&component.MalwareTriageStatus,
+			&malwareScannedAt,
+			&malwareValidUntil,
+			&malwarePURLsRaw,
+			&component.MalwareQueueStatus,
+			&malwareQueueCompletedAt,
 			&component.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if malwareScannedAt.Valid {
+			ts := malwareScannedAt.Time.UTC()
+			component.MalwareScannedAt = &ts
+		}
+		if malwareValidUntil.Valid {
+			ts := malwareValidUntil.Time.UTC()
+			component.MalwareValidUntil = &ts
+		}
+		if len(malwarePURLsRaw) > 0 {
+			if err := json.Unmarshal(malwarePURLsRaw, &component.MalwarePURLs); err != nil {
+				return nil, err
+			}
+		}
+		if malwareQueueCompletedAt.Valid {
+			ts := malwareQueueCompletedAt.Time.UTC()
+			component.MalwareQueueCompletedAt = &ts
 		}
 		components = append(components, component)
 	}
@@ -1430,9 +1498,48 @@ func (s *PostgresStore) ListComponentsPage(
 	}
 
 	b.WriteString(`SELECT c.id, c.revision_id, c.purl, c.pkg_name, c.version, c.pkg_type, COALESCE(c.pkg_namespace, ''),
-		        c.sbom_type, COALESCE(c.publisher, ''), COALESCE(c.supplier, ''), COALESCE(c.licenses, '[]'::jsonb), COALESCE(c.properties, '{}'::jsonb), c.created_at
+		        c.sbom_type, COALESCE(c.publisher, ''), COALESCE(c.supplier, ''), COALESCE(c.licenses, '[]'::jsonb), COALESCE(c.properties, '{}'::jsonb),
+		        CASE
+		          WHEN COALESCE(mf.malware_count, 0) > 0 THEN 'MALWARE'
+		          WHEN cs.component_purl IS NOT NULL THEN 'CLEAN'
+		          ELSE 'UNKNOWN'
+		        END AS malware_verdict,
+		        COALESCE(mf.malware_count, 0) AS malware_findings_count,
+		        COALESCE(mf.malware_triage_status, '') AS malware_triage_status,
+		        cs.scanned_at AS malware_scanned_at,
+		        cs.valid_until AS malware_valid_until,
+		        COALESCE(to_jsonb(mf.malware_purls), '[]'::jsonb) AS malware_purls,
+		        COALESCE(lq.status, '') AS malware_queue_status,
+		        lq.completed_at AS malware_queue_completed_at,
+		        c.created_at
 		 FROM components c
 		 JOIN test_revisions tr ON tr.id = c.revision_id
+		 LEFT JOIN LATERAL (
+		   SELECT COUNT(*)::int AS malware_count,
+		          ARRAY_AGG(DISTINCT f.malware_purl ORDER BY f.malware_purl) AS malware_purls,
+		          CASE
+		            WHEN COUNT(*) = 0 THEN ''
+		            WHEN COUNT(DISTINCT COALESCE(tg.status, 'OPEN')) = 1 THEN MIN(COALESCE(tg.status, 'OPEN'))
+		            ELSE 'MIXED'
+		          END AS malware_triage_status
+		     FROM component_analysis_malware_findings f
+		     JOIN source_malware_input_results r
+		       ON r.id = f.source_malware_input_result_id
+		     LEFT JOIN component_malware_findings_triage tg
+		       ON tg.test_id = tr.test_id
+		      AND tg.component_purl = f.component_purl
+		      AND tg.malware_purl = f.malware_purl
+		    WHERE r.verdict = 'MALWARE'
+		      AND f.component_purl = c.purl
+		 ) mf ON TRUE
+		 LEFT JOIN component_analysis_malware_component_state cs ON cs.component_purl = c.purl
+		 LEFT JOIN LATERAL (
+		   SELECT q.status, q.completed_at
+		     FROM component_analysis_malware_queue q
+		    WHERE q.component_purl = c.purl
+		    ORDER BY q.created_at DESC, q.id DESC
+		    LIMIT 1
+		 ) lq ON TRUE
 		 WHERE tr.test_id = `)
 	b.WriteString(arg(testID))
 	b.WriteString(` AND tr.is_active = TRUE`)
@@ -1518,6 +1625,10 @@ func (s *PostgresStore) ListComponentsPage(
 	components := make([]models.Component, 0)
 	for rows.Next() {
 		var component models.Component
+		var malwareScannedAt sql.NullTime
+		var malwareValidUntil sql.NullTime
+		var malwareQueueCompletedAt sql.NullTime
+		var malwarePURLsRaw []byte
 		if err := rows.Scan(
 			&component.ID,
 			&component.RevisionID,
@@ -1531,9 +1642,34 @@ func (s *PostgresStore) ListComponentsPage(
 			&component.Supplier,
 			&component.Licenses,
 			&component.Properties,
+			&component.MalwareVerdict,
+			&component.MalwareFindingsCount,
+			&component.MalwareTriageStatus,
+			&malwareScannedAt,
+			&malwareValidUntil,
+			&malwarePURLsRaw,
+			&component.MalwareQueueStatus,
+			&malwareQueueCompletedAt,
 			&component.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if malwareScannedAt.Valid {
+			ts := malwareScannedAt.Time.UTC()
+			component.MalwareScannedAt = &ts
+		}
+		if malwareValidUntil.Valid {
+			ts := malwareValidUntil.Time.UTC()
+			component.MalwareValidUntil = &ts
+		}
+		if len(malwarePURLsRaw) > 0 {
+			if err := json.Unmarshal(malwarePURLsRaw, &component.MalwarePURLs); err != nil {
+				return nil, err
+			}
+		}
+		if malwareQueueCompletedAt.Valid {
+			ts := malwareQueueCompletedAt.Time.UTC()
+			component.MalwareQueueCompletedAt = &ts
 		}
 		components = append(components, component)
 	}
@@ -1553,11 +1689,54 @@ func (s *PostgresStore) GetComponent(testID, componentID uuid.UUID) (*models.Com
 
 	row := s.db.QueryRowContext(ctx,
 		`SELECT c.id, c.revision_id, c.purl, c.pkg_name, c.version, c.pkg_type, COALESCE(c.pkg_namespace, ''),
-		        c.sbom_type, COALESCE(c.publisher, ''), COALESCE(c.supplier, ''), COALESCE(c.licenses, '[]'::jsonb), COALESCE(c.properties, '{}'::jsonb), c.created_at
+		        c.sbom_type, COALESCE(c.publisher, ''), COALESCE(c.supplier, ''), COALESCE(c.licenses, '[]'::jsonb), COALESCE(c.properties, '{}'::jsonb),
+		        CASE
+		          WHEN COALESCE(mf.malware_count, 0) > 0 THEN 'MALWARE'
+		          WHEN cs.component_purl IS NOT NULL THEN 'CLEAN'
+		          ELSE 'UNKNOWN'
+		        END AS malware_verdict,
+		        COALESCE(mf.malware_count, 0) AS malware_findings_count,
+		        COALESCE(mf.malware_triage_status, '') AS malware_triage_status,
+		        cs.scanned_at AS malware_scanned_at,
+		        cs.valid_until AS malware_valid_until,
+		        COALESCE(to_jsonb(mf.malware_purls), '[]'::jsonb) AS malware_purls,
+		        COALESCE(lq.status, '') AS malware_queue_status,
+		        lq.completed_at AS malware_queue_completed_at,
+		        c.created_at
 		 FROM components c
 		 JOIN test_revisions tr ON tr.id = c.revision_id
+		 LEFT JOIN LATERAL (
+		   SELECT COUNT(*)::int AS malware_count,
+		          ARRAY_AGG(DISTINCT f.malware_purl ORDER BY f.malware_purl) AS malware_purls,
+		          CASE
+		            WHEN COUNT(*) = 0 THEN ''
+		            WHEN COUNT(DISTINCT COALESCE(tg.status, 'OPEN')) = 1 THEN MIN(COALESCE(tg.status, 'OPEN'))
+		            ELSE 'MIXED'
+		          END AS malware_triage_status
+		     FROM component_analysis_malware_findings f
+		     JOIN source_malware_input_results r
+		       ON r.id = f.source_malware_input_result_id
+		     LEFT JOIN component_malware_findings_triage tg
+		       ON tg.test_id = tr.test_id
+		      AND tg.component_purl = f.component_purl
+		      AND tg.malware_purl = f.malware_purl
+		    WHERE r.verdict = 'MALWARE'
+		      AND f.component_purl = c.purl
+		 ) mf ON TRUE
+		 LEFT JOIN component_analysis_malware_component_state cs ON cs.component_purl = c.purl
+		 LEFT JOIN LATERAL (
+		   SELECT q.status, q.completed_at
+		     FROM component_analysis_malware_queue q
+		    WHERE q.component_purl = c.purl
+		    ORDER BY q.created_at DESC, q.id DESC
+		    LIMIT 1
+		 ) lq ON TRUE
 		 WHERE tr.test_id = $1 AND tr.is_active = TRUE AND c.id = $2`, testID, componentID)
 	var component models.Component
+	var malwareScannedAt sql.NullTime
+	var malwareValidUntil sql.NullTime
+	var malwareQueueCompletedAt sql.NullTime
+	var malwarePURLsRaw []byte
 	if err := row.Scan(
 		&component.ID,
 		&component.RevisionID,
@@ -1571,12 +1750,37 @@ func (s *PostgresStore) GetComponent(testID, componentID uuid.UUID) (*models.Com
 		&component.Supplier,
 		&component.Licenses,
 		&component.Properties,
+		&component.MalwareVerdict,
+		&component.MalwareFindingsCount,
+		&component.MalwareTriageStatus,
+		&malwareScannedAt,
+		&malwareValidUntil,
+		&malwarePURLsRaw,
+		&component.MalwareQueueStatus,
+		&malwareQueueCompletedAt,
 		&component.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
+	}
+	if malwareScannedAt.Valid {
+		ts := malwareScannedAt.Time.UTC()
+		component.MalwareScannedAt = &ts
+	}
+	if malwareValidUntil.Valid {
+		ts := malwareValidUntil.Time.UTC()
+		component.MalwareValidUntil = &ts
+	}
+	if len(malwarePURLsRaw) > 0 {
+		if err := json.Unmarshal(malwarePURLsRaw, &component.MalwarePURLs); err != nil {
+			return nil, err
+		}
+	}
+	if malwareQueueCompletedAt.Valid {
+		ts := malwareQueueCompletedAt.Time.UTC()
+		component.MalwareQueueCompletedAt = &ts
 	}
 
 	return &component, nil
