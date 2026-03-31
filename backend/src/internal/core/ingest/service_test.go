@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"backend/internal/models"
 	"backend/internal/store"
@@ -314,5 +315,52 @@ func TestProcessorUpdateStatusFailureOnStoreError(t *testing.T) {
 	var procErr *ProcessError
 	if !errors.As(err, &procErr) || procErr.Op != OpUpdateStatus {
 		t.Fatalf("expected update status error, got %v", err)
+	}
+}
+
+func TestProcessorEnqueuesBackfillEvenWhenComponentStateIsFresh(t *testing.T) {
+	spy := newSpyStore(t)
+	job, testID := prepareJob(t, spy)
+
+	purl := "pkg:npm/leftpad@1.0.0"
+	if _, err := spy.UpsertComponentAnalysisMalwareComponentState(purl, time.Now().UTC(), nil); err != nil {
+		t.Fatalf("upsert fresh component state: %v", err)
+	}
+
+	processor := newProcessorForTests(spy)
+	_, err := processor.Process(ProcessInput{
+		JobID:           job.ID,
+		TestID:          testID,
+		SbomSha256:      testSBOMSHA,
+		SbomStandard:    "cyclonedx",
+		SbomSpecVersion: "1.6",
+		SbomProducer:    "syft",
+		ComponentsCount: 1,
+		Components: []store.ComponentInput{
+			{
+				PURL:         purl,
+				PkgName:      "leftpad",
+				Version:      "1.0.0",
+				PkgType:      "npm",
+				PkgNamespace: "unknown",
+				SbomType:     "cyclonedx",
+			},
+		},
+		Payload: []byte(`{"components":[{"purl":"pkg:npm/leftpad@1.0.0"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	items, err := spy.ListComponentAnalysisQueue(store.ComponentAnalysisQueueFilter{
+		ComponentPURL: purl,
+		Limit:         10,
+		Offset:        0,
+	})
+	if err != nil {
+		t.Fatalf("list component analysis queue: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 queue item for backfill enqueue, got %d", len(items))
 	}
 }

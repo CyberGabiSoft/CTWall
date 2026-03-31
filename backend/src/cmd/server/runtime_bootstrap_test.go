@@ -268,6 +268,53 @@ func TestDeriveAppEncryptionKeyChangesWithSalt(t *testing.T) {
 	}
 }
 
+func TestApplyRuntimeSecretsToEnv_PrefersExistingDBURL(t *testing.T) {
+	envDBURL := "postgres://env-user:env-pass@env-host:5432/env-db?sslmode=disable"
+	fileDBURL := "postgres://file-user:file-pass@file-host:5432/file-db?sslmode=disable"
+
+	t.Setenv("DB_URL", envDBURL)
+
+	cfg := config.Config{
+		Database: config.DatabaseConfig{URL: fileDBURL},
+		Secrets: config.SecretsConfig{
+			JWTSecretKey:            "jwt-from-secrets",
+			AppEncryptionPassphrase: "passphrase-from-secrets",
+			AppEncryptionSalt:       "base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+			AlertmanagerUsername:    "alert-user",
+			AlertmanagerPassword:    "alert-password",
+		},
+	}
+	if err := applyRuntimeSecretsToEnv(cfg); err != nil {
+		t.Fatalf("applyRuntimeSecretsToEnv: %v", err)
+	}
+	if got := strings.TrimSpace(os.Getenv("DB_URL")); got != envDBURL {
+		t.Fatalf("expected DB_URL from env, got %q", got)
+	}
+}
+
+func TestApplyRuntimeSecretsToEnv_FallsBackToConfigDBURL(t *testing.T) {
+	fileDBURL := "postgres://file-user:file-pass@file-host:5432/file-db?sslmode=disable"
+
+	t.Setenv("DB_URL", "")
+
+	cfg := config.Config{
+		Database: config.DatabaseConfig{URL: fileDBURL},
+		Secrets: config.SecretsConfig{
+			JWTSecretKey:            "jwt-from-secrets",
+			AppEncryptionPassphrase: "passphrase-from-secrets",
+			AppEncryptionSalt:       "base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+			AlertmanagerUsername:    "alert-user",
+			AlertmanagerPassword:    "alert-password",
+		},
+	}
+	if err := applyRuntimeSecretsToEnv(cfg); err != nil {
+		t.Fatalf("applyRuntimeSecretsToEnv: %v", err)
+	}
+	if got := strings.TrimSpace(os.Getenv("DB_URL")); got != fileDBURL {
+		t.Fatalf("expected DB_URL from config, got %q", got)
+	}
+}
+
 type bootstrapAdminStoreStub struct {
 	store.Store
 

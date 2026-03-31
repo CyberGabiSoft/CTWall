@@ -16,6 +16,7 @@ export interface DataComponentFilterState {
     publisher: string;
     supplier: string;
     malwareVerdict: string;
+    malwareTriageStatus: string;
     malwareScannedAt: string;
     malwareValidUntil: string;
   };
@@ -30,6 +31,7 @@ export interface DataComponentFilterState {
     publisher: FilterMode;
     supplier: FilterMode;
     malwareVerdict: FilterMode;
+    malwareTriageStatus: FilterMode;
     malwareScannedAt: FilterMode;
     malwareValidUntil: FilterMode;
   };
@@ -120,10 +122,14 @@ export function filterComponentRows(
     }
     const malware = malwareLookup(row.purl ?? '');
     const malwareVerdict = malware?.verdict ?? '';
+    const malwareTriageStatus = row.malwareTriageStatus ?? '';
     const malwareScannedAt = malware?.scannedAt ?? '';
     const malwareValidUntil = malware?.validUntil ?? '';
 
     if (!matchesFilter(malwareVerdict, filters.malwareVerdict, modes.malwareVerdict)) {
+      return false;
+    }
+    if (!matchesFilter(malwareTriageStatus, filters.malwareTriageStatus, modes.malwareTriageStatus)) {
       return false;
     }
     if (!matchesFilter(malwareScannedAt, filters.malwareScannedAt, modes.malwareScannedAt)) {

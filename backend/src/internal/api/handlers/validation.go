@@ -234,7 +234,7 @@ func parseSbomTypeField(value string) (sbom.Type, bool, error) {
 	}
 	standard, err := sbom.NormalizeStandard(payload.Standard)
 	if err != nil || standard == "" {
-		return sbom.Type{}, true, fmt.Errorf("field 'sbomType.standard' must be one of: cyclonedx, spdx, swid")
+		return sbom.Type{}, true, fmt.Errorf("field 'sbomType.standard' must be one of: cyclonedx, spdx")
 	}
 	spec, err := sbom.NormalizeSpecVersion(payload.SpecVersion)
 	if err != nil {

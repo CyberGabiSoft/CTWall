@@ -96,6 +96,8 @@ Components and search:
 - `GET /api/v1/search/component-occurrences`
 - graph endpoints under `/api/v1/data/graph/*`.
 
+`GET /api/v1/tests/{testId}/components` supports `all=true` for a single-shot full list response (no page loop) and returns inline malware snapshot fields per component (`malwareVerdict`, `malwareFindingsCount`, `malwareScannedAt`, `malwareValidUntil`, `malwarePurls`, latest queue status metadata).
+
 ## 7. Ingest and SBOM domain
 
 - `POST /api/v1/ingest`
@@ -153,6 +155,7 @@ Users:
 ## 11. Operational API notes
 
 1. Most list endpoints support pagination (`page`, `pageSize`) and filtering.
+   - Components list additionally supports `all=true` to bypass paginated client iteration for one-request full table hydration.
 2. API errors follow one standardized problem shape.
 3. `X-Project-ID` is used where operation is project-scoped.
 4. OpenAPI is the source of truth for exact request and response schemas.

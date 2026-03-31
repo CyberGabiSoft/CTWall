@@ -6,7 +6,6 @@ export const findingsColumnDefinitions: ColumnDefinition[] = [
   { key: 'isMalware', label: 'Malware', sortKey: 'isMalware', filterKey: 'isMalware' },
   { key: 'resultFilename', label: 'Result file', sortKey: 'resultFilename', filterKey: 'resultFilename' },
   { key: 'detectVersion', label: 'Detect version', sortKey: 'detectVersion', filterKey: 'detectVersion' },
-  { key: 'fixedVersion', label: 'Fixed version', sortKey: 'fixedVersion', filterKey: 'fixedVersion' },
   { key: 'publishedAt', label: 'Published', sortKey: 'publishedAt', filterKey: 'publishedAt' },
   { key: 'modifiedAt', label: 'Modified', sortKey: 'modifiedAt', filterKey: 'modifiedAt' },
   { key: 'createdAt', label: 'Created', sortKey: 'createdAt', filterKey: 'createdAt' },
@@ -40,7 +39,6 @@ export const findingsAdvancedKeys = [
   'componentPurl',
   'resultFilename',
   'detectVersion',
-  'fixedVersion',
   'isMalware'
 ] as const;
 export const syncHistoryAdvancedKeys = ['status', 'mode', 'syncId'] as const;

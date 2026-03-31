@@ -377,7 +377,8 @@ export class SecurityAlertsComponent {
       }
       lastProjectId = pid;
       this.resetToDefaults();
-      void this.refreshAll(true);
+      // Tables are refreshed by query-driven effects above; here we only refresh config panels.
+      void Promise.all([this.refreshDedupRules(true), this.refreshJiraConnector(true)]);
     });
 
     // Fetch groups when applied query or pagination changes.

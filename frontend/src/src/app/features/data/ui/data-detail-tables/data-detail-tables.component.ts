@@ -140,6 +140,15 @@ export class DataDetailTablesComponent {
         selected: multi.supplier ?? []
       },
       {
+        key: 'malwareTriageStatus',
+        label: 'Malware triage',
+        mode: modes.malwareTriageStatus,
+        value: filters.malwareTriageStatus ?? '',
+        options: options.malwareTriageStatus ?? [],
+        selected: [],
+        selectPlaceholder: 'Exact'
+      },
+      {
         key: 'licenses',
         label: 'Licenses',
         mode: modes.licenses,

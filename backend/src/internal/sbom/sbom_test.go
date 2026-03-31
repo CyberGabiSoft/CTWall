@@ -99,3 +99,10 @@ func TestParseSpdxFixture(t *testing.T) {
 		t.Fatalf("expected components parsed")
 	}
 }
+
+func TestParseSWIDPayloadUnsupported(t *testing.T) {
+	payload := []byte(`{"tagId":"swid:generated-ctwall","name":"generated-ctwall","version":"1.2.3","tagVersion":1}`)
+	if _, err := Parse(payload); err == nil {
+		t.Fatalf("expected unsupported sbom format error for swid payload")
+	}
+}

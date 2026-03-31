@@ -37,7 +37,7 @@ services:
       - ctwall
 
   ctwall-initializer:
-    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.0.0}
+    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.1.0}
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
@@ -49,7 +49,7 @@ services:
         condition: service_healthy
     environment:
       CTWALL_INIT_ONLY: "true"
-      DB_URL: ${DB_URL:-postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable}
+      DB_URL: postgres://${POSTGRES_USER:-appuser}:${POSTGRES_PASSWORD:-change-me-postgres}@${POSTGRES_HOST:-ctwall-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-appdb}?sslmode=${POSTGRES_SSLMODE:-disable}
       CTWALL_SECRETS_PATH: /app/data/secrets.yaml
     volumes:
       - ./deploy/docker/backend-config:/app/config
@@ -58,7 +58,7 @@ services:
       - ctwall
 
   ctwall-backend:
-    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.0.0}
+    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.1.0}
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
@@ -73,7 +73,7 @@ services:
       ctwall-alertmanager:
         condition: service_started
     environment:
-      DB_URL: ${DB_URL:-postgres://appuser:change-me-postgres@ctwall-postgres:5432/appdb?sslmode=disable}
+      DB_URL: postgres://${POSTGRES_USER:-appuser}:${POSTGRES_PASSWORD:-change-me-postgres}@${POSTGRES_HOST:-ctwall-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-appdb}?sslmode=${POSTGRES_SSLMODE:-disable}
       CTWALL_SECRETS_PATH: /app/data/secrets.yaml
       ALERTING_ALLOW_INSECURE_SMTP: ${ALERTING_ALLOW_INSECURE_SMTP:-false}
       ALERTING_ALLOW_HTTP_TARGETS: ${ALERTING_ALLOW_HTTP_TARGETS:-false}
@@ -85,7 +85,7 @@ services:
       - ctwall
 
   ctwall-frontend:
-    image: ${CTWALL_FRONTEND_IMAGE:-cybergabisoft/ctwall-frontend:1.0.0}
+    image: ${CTWALL_FRONTEND_IMAGE:-cybergabisoft/ctwall-frontend:1.1.0}
     build:
       context: ./frontend
       dockerfile: docker/Dockerfile
@@ -100,6 +100,7 @@ services:
       FRONTEND_SSL_KEY_PATH: ${FRONTEND_SSL_KEY_PATH:-/etc/nginx/certs/tls.key}
       FRONTEND_SSL_SELF_SIGNED_CN: ${FRONTEND_SSL_SELF_SIGNED_CN:-localhost}
       FRONTEND_SSL_SELF_SIGNED_DAYS: ${FRONTEND_SSL_SELF_SIGNED_DAYS:-365}
+      FRONTEND_CLIENT_MAX_BODY_SIZE: ${FRONTEND_CLIENT_MAX_BODY_SIZE:-50m}
     volumes:
       - ctwall-frontend-tls:/etc/nginx/certs
     ports:

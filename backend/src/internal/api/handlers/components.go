@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,20 +15,30 @@ import (
 )
 
 type componentListItem struct {
-	ID           uuid.UUID       `json:"id"`
-	RevisionID   uuid.UUID       `json:"revisionId"`
-	PURL         string          `json:"purl"`
-	PkgName      string          `json:"pkgName"`
-	Version      string          `json:"version"`
-	PkgType      string          `json:"pkgType"`
-	PkgNamespace string          `json:"pkgNamespace,omitempty"`
-	SbomType     string          `json:"sbomType,omitempty"`
-	Publisher    string          `json:"publisher,omitempty"`
-	Supplier     string          `json:"supplier,omitempty"`
-	Licenses     json.RawMessage `json:"licenses,omitempty"`
-	Properties   json.RawMessage `json:"properties,omitempty"`
-	CreatedAt    time.Time       `json:"createdAt"`
+	ID                      uuid.UUID       `json:"id"`
+	RevisionID              uuid.UUID       `json:"revisionId"`
+	PURL                    string          `json:"purl"`
+	PkgName                 string          `json:"pkgName"`
+	Version                 string          `json:"version"`
+	PkgType                 string          `json:"pkgType"`
+	PkgNamespace            string          `json:"pkgNamespace,omitempty"`
+	SbomType                string          `json:"sbomType,omitempty"`
+	Publisher               string          `json:"publisher,omitempty"`
+	Supplier                string          `json:"supplier,omitempty"`
+	Licenses                json.RawMessage `json:"licenses,omitempty"`
+	Properties              json.RawMessage `json:"properties,omitempty"`
+	CreatedAt               time.Time       `json:"createdAt"`
+	MalwareVerdict          string          `json:"malwareVerdict,omitempty"`
+	MalwareFindingsCount    int             `json:"malwareFindingsCount,omitempty"`
+	MalwareTriageStatus     string          `json:"malwareTriageStatus,omitempty"`
+	MalwareScannedAt        *time.Time      `json:"malwareScannedAt,omitempty"`
+	MalwareValidUntil       *time.Time      `json:"malwareValidUntil,omitempty"`
+	MalwarePURLs            []string        `json:"malwarePurls,omitempty"`
+	MalwareQueueStatus      string          `json:"malwareQueueStatus,omitempty"`
+	MalwareQueueCompletedAt *time.Time      `json:"malwareQueueCompletedAt,omitempty"`
 }
+
+const maxComponentsListAllLimit = 1_000_000
 
 // ListComponentsHandler returns a paginated list of components for a test.
 func ListComponentsHandler(memStore store.Store) http.HandlerFunc {
@@ -56,6 +67,17 @@ func ListComponentsHandler(memStore store.Store) http.HandlerFunc {
 		if err != nil {
 			writeProblem(w, r, http.StatusBadRequest, "Invalid Request", "Invalid pagination parameters.", err)
 			return
+		}
+		if raw := strings.TrimSpace(r.URL.Query().Get("all")); raw != "" {
+			all, parseErr := strconv.ParseBool(raw)
+			if parseErr != nil {
+				writeProblem(w, r, http.StatusBadRequest, "Invalid Request", "Invalid 'all' parameter.", parseErr)
+				return
+			}
+			if all {
+				page = 1
+				pageSize = maxComponentsListAllLimit
+			}
 		}
 
 		query, err := parseOptionalQuery(r.URL.Query().Get("q"))
@@ -162,19 +184,27 @@ func ListComponentsHandler(memStore store.Store) http.HandlerFunc {
 		results := make([]componentListItem, 0, len(components))
 		for _, component := range components {
 			results = append(results, componentListItem{
-				ID:           component.ID,
-				RevisionID:   component.RevisionID,
-				PURL:         component.PURL,
-				PkgName:      component.PkgName,
-				Version:      component.Version,
-				PkgType:      component.PkgType,
-				PkgNamespace: component.PkgNamespace,
-				SbomType:     component.SbomType,
-				Publisher:    component.Publisher,
-				Supplier:     component.Supplier,
-				Licenses:     component.Licenses,
-				Properties:   component.Properties,
-				CreatedAt:    component.CreatedAt,
+				ID:                      component.ID,
+				RevisionID:              component.RevisionID,
+				PURL:                    component.PURL,
+				PkgName:                 component.PkgName,
+				Version:                 component.Version,
+				PkgType:                 component.PkgType,
+				PkgNamespace:            component.PkgNamespace,
+				SbomType:                component.SbomType,
+				Publisher:               component.Publisher,
+				Supplier:                component.Supplier,
+				Licenses:                component.Licenses,
+				Properties:              component.Properties,
+				MalwareVerdict:          component.MalwareVerdict,
+				MalwareFindingsCount:    component.MalwareFindingsCount,
+				MalwareTriageStatus:     component.MalwareTriageStatus,
+				MalwareScannedAt:        component.MalwareScannedAt,
+				MalwareValidUntil:       component.MalwareValidUntil,
+				MalwarePURLs:            component.MalwarePURLs,
+				MalwareQueueStatus:      component.MalwareQueueStatus,
+				MalwareQueueCompletedAt: component.MalwareQueueCompletedAt,
+				CreatedAt:               component.CreatedAt,
 			})
 		}
 

@@ -104,7 +104,11 @@ export class DataApi {
   }
 
   async getComponents(testId: string): Promise<ComponentSummary[]> {
-    return this.fetchAll<ComponentSummary>(`/tests/${encodeURIComponent(testId)}/components`);
+    const params = new HttpParams().set('all', 'true');
+    const payload = await firstValueFrom(
+      this.http.get<unknown>(`/tests/${encodeURIComponent(testId)}/components`, { params })
+    );
+    return extractItems<ComponentSummary>(payload);
   }
 
   async getComponentsPage(testId: string, page: number, pageSize: number, q?: string): Promise<ComponentSummary[]> {

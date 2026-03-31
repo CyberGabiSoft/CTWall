@@ -87,6 +87,8 @@ Most sections follow a common loading lifecycle:
 
 4. Global PURL search is not in left menu; it is initiated from top header search.
 
+5. In Test Details (`Data -> Components`), `Load all` uses a single `GET /api/v1/tests/{testId}/components?all=true` call and consumes inline malware snapshot fields (`malwareVerdict`, `malwareScannedAt`, `malwareValidUntil`, `malwarePurls`) from that payload, so the UI does not issue per-component findings/queue follow-up requests.
+
 ## 7. Docker runtime
 
 Frontend containerization uses multi-stage build:
@@ -110,6 +112,8 @@ Files:
 Runtime variable:
 
 - `BACKEND_UPSTREAM` (default: `http://127.0.0.1:8080`)
+- `FRONTEND_CLIENT_MAX_BODY_SIZE` (default: `50m`)
+  - nginx `client_max_body_size` applied on both HTTP and HTTPS frontend listeners.
 - `FRONTEND_SSL_PORT` (default: `443`)
 - `FRONTEND_SSL_CERT_PATH` (default: `/etc/nginx/certs/tls.crt`)
 - `FRONTEND_SSL_KEY_PATH` (default: `/etc/nginx/certs/tls.key`)
@@ -152,3 +156,5 @@ Key runtime value:
   - set empty when relying on runtime self-signed generation (`FRONTEND_SSL_AUTO_GENERATE=true`).
 - `ingress.backendServicePortName`
   - default `http` so ingress controllers can route to frontend internal HTTP backend and avoid TLS validation issues on pod self-signed certs.
+- `ingress.annotations.nginx.ingress.kubernetes.io/proxy-body-size`
+  - default `50m` to match backend ingest upload limit for SBOM payloads.

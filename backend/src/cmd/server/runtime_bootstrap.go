@@ -293,9 +293,13 @@ func applyRuntimeSecretsToEnv(cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	dbURL := firstNonEmpty(
+		os.Getenv("DB_URL"),
+		cfg.Database.URL,
+	)
 
 	required := map[string]string{
-		"DB_URL":                strings.TrimSpace(cfg.Database.URL),
+		"DB_URL":                dbURL,
 		"JWT_SECRET_KEY":        strings.TrimSpace(cfg.Secrets.JWTSecretKey),
 		appEncryptionKeyEnv:     strings.TrimSpace(derivedAppKey),
 		"ALERTMANAGER_USERNAME": strings.TrimSpace(cfg.Secrets.AlertmanagerUsername),

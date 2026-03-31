@@ -72,31 +72,49 @@ func (s *PostgresStore) EnqueueComponentAnalysisBatch(componentPURLs []string, r
 	ctx, cancel := s.ctx()
 	defer cancel()
 
-	rows, err := s.db.QueryContext(ctx,
-		`WITH input AS (
-			 SELECT DISTINCT UNNEST($1::text[]) AS component_purl
-		 ),
-		 fresh AS (
-			 SELECT DISTINCT component_purl
-			 FROM component_analysis_malware_component_state
-			 WHERE valid_until IS NULL OR valid_until > NOW()
-		 ),
-		 candidates AS (
-			 SELECT i.component_purl
-			 FROM input i
-			 LEFT JOIN fresh f ON f.component_purl = i.component_purl
-			 WHERE f.component_purl IS NULL
-		 )
-		 INSERT INTO component_analysis_malware_queue (
-			 component_purl, status, reason, attempts, scheduled_for
-		 )
-		 SELECT component_purl, $2, $3, 0, $4
-		 FROM candidates
-		 ON CONFLICT (component_purl) WHERE status IN ('PENDING','PROCESSING') DO UPDATE SET
-			 reason = EXCLUDED.reason,
-			 scheduled_for = COALESCE(EXCLUDED.scheduled_for, component_analysis_malware_queue.scheduled_for),
-			 updated_at = NOW()
-		 RETURNING id`,
+	query := `WITH input AS (
+			SELECT DISTINCT UNNEST($1::text[]) AS component_purl
+		),
+		fresh AS (
+			SELECT DISTINCT component_purl
+			FROM component_analysis_malware_component_state
+			WHERE valid_until IS NULL OR valid_until > NOW()
+		),
+		candidates AS (
+			SELECT i.component_purl
+			FROM input i
+			LEFT JOIN fresh f ON f.component_purl = i.component_purl
+			WHERE f.component_purl IS NULL
+		)
+		INSERT INTO component_analysis_malware_queue (
+			component_purl, status, reason, attempts, scheduled_for
+		)
+		SELECT component_purl, $2, $3, 0, $4
+		FROM candidates
+		ON CONFLICT (component_purl) WHERE status IN ('PENDING','PROCESSING') DO UPDATE SET
+			reason = EXCLUDED.reason,
+			scheduled_for = COALESCE(EXCLUDED.scheduled_for, component_analysis_malware_queue.scheduled_for),
+			updated_at = NOW()
+		RETURNING id`
+	if normalizedReason == ComponentAnalysisReasonBackfill {
+		// Ingest/backfill should always enqueue current SBOM components. Fresh-state filtering
+		// is kept for scheduled/manual flows to avoid unnecessary periodic reprocessing.
+		query = `WITH input AS (
+				SELECT DISTINCT UNNEST($1::text[]) AS component_purl
+			)
+			INSERT INTO component_analysis_malware_queue (
+				component_purl, status, reason, attempts, scheduled_for
+			)
+			SELECT component_purl, $2, $3, 0, $4
+			FROM input
+			ON CONFLICT (component_purl) WHERE status IN ('PENDING','PROCESSING') DO UPDATE SET
+				reason = EXCLUDED.reason,
+				scheduled_for = COALESCE(EXCLUDED.scheduled_for, component_analysis_malware_queue.scheduled_for),
+				updated_at = NOW()
+			RETURNING id`
+	}
+
+	rows, err := s.db.QueryContext(ctx, query,
 		pgtype.FlatArray[string](unique),
 		ComponentAnalysisStatusPending,
 		normalizedReason,
@@ -705,6 +723,68 @@ func (s *PostgresStore) GetComponentAnalysisFinding(id uuid.UUID) (*models.Compo
 	return finding, nil
 }
 
+// ListMalwareMatchCandidates returns raw malware candidates
+// for a component PURL. The caller applies final version-aware matching logic.
+func (s *PostgresStore) ListMalwareMatchCandidates(componentPURL string) ([]MalwareMatchCandidate, error) {
+	componentPURL = strings.TrimSpace(componentPURL)
+	if componentPURL == "" {
+		return nil, ErrInvalidPayload
+	}
+	basePURL := componentBasePURL(componentPURL)
+	if basePURL == "" {
+		return nil, ErrInvalidPayload
+	}
+
+	ctx, cancel := s.ctx()
+	defer cancel()
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT scr.component_purl,
+		        scr.details_json,
+		        COALESCE(scr.analysis_result_id, sr.id) AS source_malware_input_result_id
+		 FROM source_malware_input_component_results scr
+		 LEFT JOIN source_malware_input_results sr
+		   ON sr.component_purl = scr.component_purl
+		 WHERE scr.is_malware = TRUE
+		   AND COALESCE(scr.analysis_result_id, sr.id) IS NOT NULL
+		   AND (
+		     scr.component_purl = $1
+		     OR scr.component_purl = $2
+		     OR scr.component_purl LIKE $2 || '@%'
+		     OR scr.component_purl LIKE $2 || '?%'
+		     OR scr.component_purl LIKE $2 || '#%'
+		   )
+		 ORDER BY scr.created_at DESC, scr.component_purl ASC`,
+		componentPURL,
+		basePURL,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]MalwareMatchCandidate, 0)
+	for rows.Next() {
+		var candidate MalwareMatchCandidate
+		if err := rows.Scan(
+			&candidate.ComponentPURL,
+			&candidate.DetailsJSON,
+			&candidate.SourceMalwareInputResultID,
+		); err != nil {
+			return nil, err
+		}
+		candidate.ComponentPURL = strings.TrimSpace(candidate.ComponentPURL)
+		if candidate.ComponentPURL == "" || candidate.SourceMalwareInputResultID == uuid.Nil {
+			continue
+		}
+		results = append(results, candidate)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 // ListAnalysisResultsForComponentMatch returns malware results matching a component PURL.
 func (s *PostgresStore) ListAnalysisResultsForComponentMatch(componentPURL string) ([]models.AnalysisResult, error) {
 	componentPURL = strings.TrimSpace(componentPURL)
@@ -764,6 +844,21 @@ func (s *PostgresStore) ListAnalysisResultsForComponentMatch(componentPURL strin
 		return nil, err
 	}
 	return results, nil
+}
+
+func componentBasePURL(componentPURL string) string {
+	clean := strings.TrimSpace(componentPURL)
+	if clean == "" {
+		return ""
+	}
+	clean = strings.SplitN(clean, "#", 2)[0]
+	clean = strings.SplitN(clean, "?", 2)[0]
+	lastSlash := strings.LastIndex(clean, "/")
+	lastAt := strings.LastIndex(clean, "@")
+	if lastAt > lastSlash {
+		clean = clean[:lastAt]
+	}
+	return strings.TrimSpace(clean)
 }
 
 func scanComponentAnalysisQueueItem(row *sql.Row) (*models.ComponentAnalysisQueueItem, error) {

@@ -4,9 +4,9 @@ dependencies:
   version: 18.5.14
 - name: ctwall-backend
   repository: file://../../backend/helm/ctwall-backend
-  version: 1.0.0
+  version: 1.1.0
 - name: ctwall-frontend
   repository: file://../../frontend/helm/ctwall-frontend
-  version: 1.0.0
-digest: sha256:d7ccd45360af86febffd526a3aa0e6aa8c848a5545afd8edb0606d70ea839557
-generated: "2026-03-28T19:21:07.420660582+01:00"
+  version: 1.1.0
+digest: sha256:9b3f96752a93a91d67d873a90d31df0ff442f6e1905d0655798dd9d3211053d2
+generated: "2026-03-31T23:20:02.170700899+02:00"

@@ -1,3 +1,12 @@
+global:
+  # Single source of truth for PostgreSQL credentials in unified chart.
+  # Change password in one place: global.postgresql.auth.password
+  postgresql:
+    auth:
+      username: appuser
+      password: change-me-postgres
+      database: appdb
+
 backend:
   enabled: true
 
@@ -5,13 +14,13 @@ backend:
   # Keep backend in-chart PostgreSQL disabled in this top-level chart.
   config:
     database:
-      url: 'postgres://{{ .Values.global.postgresql.auth.username }}:{{ .Values.global.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.global.postgresql.auth.database }}?sslmode=disable'
+      url: 'postgres://{{ default "appuser" (default .Values.postgresql.auth.username .Values.global.postgresql.auth.username) }}:{{ default "change-me-postgres" (default .Values.postgresql.auth.password .Values.global.postgresql.auth.password) }}@{{ .Release.Name }}-postgresql:5432/{{ default "appdb" (default .Values.postgresql.auth.database .Values.global.postgresql.auth.database) }}?sslmode=disable'
   env:
-    DB_URL: 'postgres://{{ .Values.global.postgresql.auth.username }}:{{ .Values.global.postgresql.auth.password }}@{{ .Release.Name }}-postgresql:5432/{{ .Values.global.postgresql.auth.database }}?sslmode=disable'
+    DB_URL: 'postgres://{{ default "appuser" (default .Values.postgresql.auth.username .Values.global.postgresql.auth.username) }}:{{ default "change-me-postgres" (default .Values.postgresql.auth.password .Values.global.postgresql.auth.password) }}@{{ .Release.Name }}-postgresql:5432/{{ default "appdb" (default .Values.postgresql.auth.database .Values.global.postgresql.auth.database) }}?sslmode=disable'
 
   image:
     repository: docker.io/cybergabisoft/ctwall-backend
-    tag: "1.0.0"
+    tag: "1.1.0"
     pullPolicy: IfNotPresent
 
   # Set to false to use external PostgreSQL.
@@ -20,24 +29,33 @@ backend:
   # - backend.config.database.url
   postgresql:
     enabled: false
+    auth:
+      # In unified chart this should stay empty; backend resolves credentials
+      # from global.postgresql.auth.* by default.
+      username: ""
+      password: ""
+      database: ""
 
 frontend:
   enabled: true
 
   image:
     repository: docker.io/cybergabisoft/ctwall-frontend
-    tag: "1.0.0"
+    tag: "1.1.0"
     pullPolicy: IfNotPresent
 
   env:
     BACKEND_UPSTREAM: "http://{{ .Release.Name }}-backend:8080"
     # Helm deploys TLS via Kubernetes Secret; runtime cert auto-generation in pod should stay disabled.
     FRONTEND_SSL_AUTO_GENERATE: "false"
+    # Keep nginx upload limit aligned with backend ingest (50 MiB).
+    FRONTEND_CLIENT_MAX_BODY_SIZE: "50m"
 
   ingress:
     enabled: false
     className: ""
-    annotations: {}
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     backendServicePortName: "https"
     hosts:
       - host: ctwall-frontend.local
@@ -46,19 +64,14 @@ frontend:
             pathType: Prefix
     tls: []
 
-global:
-  postgresql:
-    auth:
-      username: appuser
-      password: change-me-postgres
-      database: appdb
-
 postgresql:
   enabled: true
   auth:
-    username: appuser
-    password: change-me-postgres
-    database: appdb
+    # Bitnami PostgreSQL chart consumes global.postgresql.auth.* in this setup.
+    # Keep empty unless you intentionally diverge from global values.
+    username: ""
+    password: ""
+    database: ""
   primary:
     persistence:
       enabled: true

@@ -144,9 +144,7 @@ export function findingValue(item: ScanComponentResult, key: string): string {
     case 'modifiedAt':
       return item.modifiedAt ?? '';
     case 'detectVersion':
-      return item.detectVersion ?? '';
-    case 'fixedVersion':
-      return item.fixedVersion ?? '';
+      return detectVersionsDisplay(item);
     case 'createdAt':
       return item.createdAt ?? '';
     case 'isMalware':
@@ -154,6 +152,80 @@ export function findingValue(item: ScanComponentResult, key: string): string {
     default:
       return '';
   }
+}
+
+function detectVersionsDisplay(item: ScanComponentResult): string {
+  const versions = detectVersionsFromFinding(item);
+  return versions.length > 0 ? versions.join(', ') : '';
+}
+
+function detectVersionsFromFinding(item: ScanComponentResult): string[] {
+  const seen = new Set<string>();
+  const direct = Array.isArray(item.detectVersions) ? item.detectVersions : [];
+  direct.forEach((entry) => {
+    if (typeof entry !== 'string') {
+      return;
+    }
+    const value = entry.trim();
+    if (value) {
+      seen.add(value);
+    }
+  });
+  if (seen.size > 0) {
+    return Array.from(seen);
+  }
+
+  const details = item.detailsJson;
+  if (!details || typeof details !== 'object') {
+    return [];
+  }
+  const affectedRaw = getOwnValue(details, 'affected');
+  if (!Array.isArray(affectedRaw)) {
+    return [];
+  }
+  const componentBase = purlBase(item.componentPurl);
+  affectedRaw.forEach((affectedEntry) => {
+    if (!affectedEntry || typeof affectedEntry !== 'object') {
+      return;
+    }
+    const packageRaw = getOwnValue(affectedEntry as Record<string, unknown>, 'package');
+    const packageObj = packageRaw && typeof packageRaw === 'object' ? (packageRaw as Record<string, unknown>) : null;
+    const packagePurlRaw = packageObj ? getOwnValue(packageObj, 'purl') : undefined;
+    const packagePurl = typeof packagePurlRaw === 'string' ? packagePurlRaw.trim() : '';
+    const affectedBase = purlBase(packagePurl);
+    if (componentBase && affectedBase && componentBase !== affectedBase) {
+      return;
+    }
+    const versionsRaw = getOwnValue(affectedEntry as Record<string, unknown>, 'versions');
+    if (!Array.isArray(versionsRaw)) {
+      return;
+    }
+    versionsRaw.forEach((versionRaw) => {
+      if (typeof versionRaw !== 'string') {
+        return;
+      }
+      const value = versionRaw.trim();
+      if (value) {
+        seen.add(value);
+      }
+    });
+  });
+  return Array.from(seen);
+}
+
+function purlBase(raw: string | undefined): string {
+  const value = (raw ?? '').trim();
+  if (!value) {
+    return '';
+  }
+  const fragmentFree = value.split('#', 1)[0] ?? value;
+  const queryFree = fragmentFree.split('?', 1)[0] ?? fragmentFree;
+  const lastSlash = queryFree.lastIndexOf('/');
+  const lastAt = queryFree.lastIndexOf('@');
+  if (lastAt <= lastSlash) {
+    return queryFree;
+  }
+  return queryFree.slice(0, lastAt);
 }
 
 export function findingDisplayValue(item: ScanComponentResult, key: string): string {
@@ -168,7 +240,6 @@ export function findingsDetailRows(item: ScanComponentResult): FindingDetail[] {
     { key: 'isMalware', label: 'Malware' },
     { key: 'resultFilename', label: 'Result file' },
     { key: 'detectVersion', label: 'Detect version' },
-    { key: 'fixedVersion', label: 'Fixed version' },
     { key: 'publishedAt', label: 'Published' },
     { key: 'modifiedAt', label: 'Modified' },
     { key: 'createdAt', label: 'Created' },
@@ -495,14 +566,6 @@ export function buildFindingsAdvancedFields(
       value: values['detectVersion'] ?? '',
       options: options['detectVersion'] ?? [],
       selected: multi['detectVersion'] ?? [],
-    },
-    {
-      key: 'fixedVersion',
-      label: 'Fixed version',
-      mode: modes['fixedVersion'],
-      value: values['fixedVersion'] ?? '',
-      options: options['fixedVersion'] ?? [],
-      selected: multi['fixedVersion'] ?? [],
     },
     {
       key: 'isMalware',

@@ -43,6 +43,7 @@ export interface ScanComponentResult {
   publishedAt?: string;
   modifiedAt?: string;
   detectVersion?: string;
+  detectVersions?: string[];
   fixedVersion?: string;
   isMalware: boolean;
   createdAt: string;
