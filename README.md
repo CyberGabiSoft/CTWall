@@ -42,7 +42,6 @@ From an operational perspective, CTWall platform delivers useful functionality t
 </ul>
 
 <br />
-<br />
 <p align="center">
   <a href="./docs/images/ctwall-dashboard.png">
     <img src="./docs/images/ctwall-dashboard.png" alt="CTWall Dashboard" width="32%" />
@@ -100,20 +99,25 @@ Teams get structured results and can move faster from alert to decision.
 
 CTWall helps by correlating SBOM/BOM components with threat intelligence and malware advisories, then generating operational alerts.
 
-1. **September 2025 npm supply chain campaign (Shai-Hulud + cryptojacking payloads).**
+1. **March 2026 npm supply-chain compromise of Axios (axios, MAL-2026-2307).** 
+Compromised maintainer credentials led to malicious axios releases (1.14.1, 0.30.4) that introduced the trojanized dependency plain-crypto-js@4.2.1; 
+public advisories describe a postinstall-triggered cross-platform RAT/dropper and recommend treating exposed systems as compromised, with immediate secret and credential rotation.
+
+2. **September 2025 npm supply chain campaign (Shai-Hulud + cryptojacking payloads).**
 Phishing-led maintainer compromise, malicious package updates, credential/token theft, and CI/CD persistence were publicly documented in sector advisories.
 
-2. **July 2025 PyPI phishing incident with malicious `num2words` releases (0.5.15, 0.5.16).**
+3. **July 2025 PyPI phishing incident with malicious `num2words` releases (0.5.15, 0.5.16).**
 Compromised maintainer account led to malicious package versions being published and later removed.
 
-3. **November 2025 PyPI typosquatting campaign (`tableate`, MAL-2025-191535).**
+4. **November 2025 PyPI typosquatting campaign (`tableate`, MAL-2025-191535).**
 Public OSV records describe RAT-like behavior and second-stage payload delivery.
 
-4. **March 2026 PyPI malware case (`amigapythonupdater`, MAL-2026-1136).**
+5. **March 2026 PyPI malware case (`amigapythonupdater`, MAL-2026-1136).**
 Public OSV records describe exfiltration of environment variables/cloud tokens and command execution behavior.
 
-5. **February 2026 npm malware case (`test-npm-style`, MAL-2026-771).**
+6. **February 2026 npm malware case (`test-npm-style`, MAL-2026-771).**
 Public OSV/GHSA-linked records classify affected versions as malicious and recommend immediate secret rotation.
+
 <br />
 <br />
 
