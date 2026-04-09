@@ -57,7 +57,7 @@
     "eslint-plugin-security": "^3.0.1",
     "jsdom": "^27.1.0",
     "typescript": "~5.9.2",
-    "vitest": "^4.0.8"
+    "vitest": "^4.1.4"
   },
   "overrides": {
     "ajv": "^8.18.0",
