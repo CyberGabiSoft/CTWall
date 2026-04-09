@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CTWall Backend API
-  version: 1.0.0
+  version: 1.2.0
   description: |
     API for ChainThreatWall (CTWall) - SBOM Management and Security Analysis System.
     Adheres to OWASP ASVS Level 2 Security Requirements.
@@ -1732,6 +1732,57 @@ components:
               type: array
               items: { type: string, format: uuid }
 
+    AlertDetectionMode:
+      type: string
+      enum: [PURL_VERSION_SMART, PURL_CONTAINS_PREFIX]
+
+    AlertDetectionModeSeverity:
+      type: string
+      enum: [INFO, WARN, ERROR]
+
+    AlertDetectionModeState:
+      type: object
+      required: [id, projectId, mode, enabled, severity, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        mode:
+          $ref: "#/components/schemas/AlertDetectionMode"
+        enabled: { type: boolean }
+        severity:
+          $ref: "#/components/schemas/AlertDetectionModeSeverity"
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AlertDetectionModesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertDetectionModeState"
+
+    AlertDetectionModeInput:
+      type: object
+      required: [mode, enabled, severity]
+      properties:
+        mode:
+          $ref: "#/components/schemas/AlertDetectionMode"
+        enabled: { type: boolean }
+        severity:
+          type: string
+          enum: [INFO, WARNING, ERROR]
+
+    PutAlertDetectionModesRequest:
+      type: object
+      required: [modes]
+      properties:
+        modes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlertDetectionModeInput"
+
     AlertDedupScope:
       type: string
       enum: [GLOBAL, PRODUCT, SCOPE, TEST]
@@ -2754,6 +2805,64 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AlertConnectorSettings"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /alerting/detection-modes:
+    get:
+      summary: List malware alert detection mode settings for selected project
+      operationId: listAlertDetectionModes
+      responses:
+        '200':
+          description: Detection mode settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDetectionModesResponse"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Replace malware alert detection mode settings (writer/admin)
+      operationId: putAlertDetectionModes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PutAlertDetectionModesRequest"
+      responses:
+        '200':
+          description: Updated detection mode settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertDetectionModesResponse"
         '400':
           description: Invalid request
           content:

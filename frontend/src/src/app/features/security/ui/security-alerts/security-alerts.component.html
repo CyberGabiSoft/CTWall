@@ -323,6 +323,80 @@
       <mat-card-content>
         <div class="card-header compact">
           <div>
+            <h4>Malware Detection Modes</h4>
+            <p>Configure per-mode activation and alert severity.</p>
+          </div>
+        </div>
+
+        @if (detectionModesStatus() === 'loading') {
+          <div class="ctw-card-state">
+            <app-loading-indicator [message]="'Loading detection modes...'" [size]="24"></app-loading-indicator>
+          </div>
+        } @else if (detectionModesStatus() === 'error') {
+          <div class="ctw-card-state error" role="status" aria-live="polite">
+            {{ detectionModesError() ?? 'Failed to load detection modes.' }}
+          </div>
+        } @else {
+          <div class="detection-mode-list">
+            @for (item of detectionModes(); track item.mode) {
+              <div class="detection-mode-row">
+                <div class="detection-mode-meta">
+                  <span class="mono detection-mode-code">{{ detectionModeCode(item.mode) }}</span>
+                  <p>{{ detectionModeDescription(item.mode) }}</p>
+                </div>
+                <mat-checkbox
+                  [checked]="item.enabled"
+                  (change)="setDetectionModeEnabled(item.mode, $event.checked)"
+                  [disabled]="!canManageDetectionModes()"
+                >
+                  Enabled
+                </mat-checkbox>
+                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact detection-mode-severity">
+                  <mat-label>Severity</mat-label>
+                  <mat-select
+                    [value]="item.severity"
+                    (selectionChange)="setDetectionModeSeverity(item.mode, $event.value)"
+                    [disabled]="!canManageDetectionModes()"
+                  >
+                    @for (severity of detectionModeSeverityOptions; track severity) {
+                      <mat-option [value]="severity">{{ severity }}</mat-option>
+                    }
+                  </mat-select>
+                </mat-form-field>
+              </div>
+            }
+          </div>
+
+          <div class="ctw-form-actions ctw-form-actions--start">
+            <button
+              mat-flat-button
+              color="primary"
+              type="button"
+              (click)="saveDetectionModes()"
+              [disabled]="!canManageDetectionModes() || detectionModesSaving() || !detectionModesDirty()"
+              matTooltip="Writer/Admin only"
+              [matTooltipDisabled]="canManageDetectionModes()"
+            >
+              Save modes
+            </button>
+            @if (!detectionModesDirty()) {
+              <span class="muted">No changes.</span>
+            }
+          </div>
+
+          @if (detectionModesError()) {
+            <div class="ctw-card-state error" role="status" aria-live="polite">
+              {{ detectionModesError() }}
+            </div>
+          }
+        }
+      </mat-card-content>
+    </mat-card>
+
+    <mat-card class="connector-card data-card ctw-panel">
+      <mat-card-content>
+        <div class="card-header compact">
+          <div>
             <h4>Malware Deduplication Rules</h4>
             <p>Choose grouping scope and min severity threshold used by Jira dispatch.</p>
           </div>

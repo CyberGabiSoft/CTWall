@@ -664,7 +664,7 @@ func TestAddRevision_ReopensFalsePositiveTriageAndAlertForSameFinding(t *testing
 	}
 }
 
-func TestCreateMalwareDetectedAlertOccurrences_RecomputesSummaryAfterAutoReopenFixed(t *testing.T) {
+func TestCreateMalwareDetectedAlertOccurrences_DoesNotAutoReopenFixed(t *testing.T) {
 	storeInstance, db := tests.NewPostgresTestStore(t)
 
 	product, err := storeInstance.CreateProduct("alerts-auto-reopen-summary-product", "")
@@ -747,27 +747,36 @@ func TestCreateMalwareDetectedAlertOccurrences_RecomputesSummaryAfterAutoReopenF
 		t.Fatalf("expected summary count 0 after FIXED, got %d", summary.MalwareComponentCount)
 	}
 
-	if _, err := storeInstance.CreateMalwareDetectedAlertOccurrences(componentPURL, malwarePURL); err != nil {
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLVersionSmart,
+		store.ComponentAnalysisMatchExact,
+	)
+	if err != nil {
 		t.Fatalf("create malware alert occurrences: %v", err)
+	}
+	if created != 0 {
+		t.Fatalf("expected no created occurrences for FIXED triage, got %d", created)
 	}
 
 	findings, err := storeInstance.ListActiveTestComponentAnalysisMalwareFindings(testItem.ID, 50, 0)
 	if err != nil {
-		t.Fatalf("list findings after auto reopen: %v", err)
+		t.Fatalf("list findings after create alert occurrences: %v", err)
 	}
 	if len(findings) == 0 {
-		t.Fatalf("expected findings after auto reopen")
+		t.Fatalf("expected findings to remain present")
 	}
-	if findings[0].TriageStatus != "OPEN" {
-		t.Fatalf("expected triage OPEN after auto reopen, got %s", findings[0].TriageStatus)
+	if findings[0].TriageStatus != "FIXED" {
+		t.Fatalf("expected triage to remain FIXED, got %s", findings[0].TriageStatus)
 	}
 
 	summary, err = storeInstance.GetActiveTestRevisionMalwareSummary(testItem.ID)
 	if err != nil {
-		t.Fatalf("load summary after auto reopen: %v", err)
+		t.Fatalf("load summary after create alert occurrences: %v", err)
 	}
-	if summary.MalwareComponentCount != 1 {
-		t.Fatalf("expected summary count 1 after auto reopen, got %d", summary.MalwareComponentCount)
+	if summary.MalwareComponentCount != 0 {
+		t.Fatalf("expected summary count 0 when triage stays FIXED, got %d", summary.MalwareComponentCount)
 	}
 }
 

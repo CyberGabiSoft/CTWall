@@ -57,6 +57,8 @@ Alerts:
 - `GET /api/v1/alert-occurrences`
 - `GET /api/v1/alerting/connectors`
 - `PUT /api/v1/alerting/connectors/{type}`
+- `GET /api/v1/alerting/detection-modes`
+- `PUT /api/v1/alerting/detection-modes`
 - `GET /api/v1/alerting/dedup-rules`
 - `PUT /api/v1/alerting/dedup-rules`
 

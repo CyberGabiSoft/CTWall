@@ -8,7 +8,8 @@ import {
   computed,
   effect,
   inject,
-  signal
+  signal,
+  untracked
 } from '@angular/core';
 import { DragDropModule, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
@@ -745,7 +746,11 @@ export class SecuritySourcesComponent implements OnInit {
     effect(() => {
       const sourceId = this.selectedSourceId();
       if (sourceId) {
-        void this.store.ensureSyncHistory(sourceId);
+        void this.store.refreshSyncHistory(sourceId);
+        const findingsStatus = untracked(() => this.store.getFindingsStatus(sourceId));
+        if (findingsStatus === 'loaded') {
+          void this.store.refreshFindings(sourceId, true);
+        }
       }
     });
 
@@ -774,12 +779,12 @@ export class SecuritySourcesComponent implements OnInit {
     effect(() => {
       const mode = this.recomputeHistoryMode();
       if (mode === 'summaries') {
-        void this.store.ensureSummaryRecomputeHistory();
+        void this.store.refreshSummaryRecomputeHistory();
         return;
       }
       const sourceId = this.selectedSourceId();
       if (sourceId) {
-        void this.store.ensureSourceResultsRecomputeHistory(sourceId);
+        void this.store.refreshSourceResultsRecomputeHistory(sourceId);
       }
     });
 
@@ -792,7 +797,7 @@ export class SecuritySourcesComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.store.ensureSources();
+    void this.store.refreshSources();
   }
 
   selectSource(sourceId: string): void {

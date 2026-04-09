@@ -20,7 +20,7 @@ backend:
 
   image:
     repository: docker.io/cybergabisoft/ctwall-backend
-    tag: "1.1.0"
+    tag: "1.2.0"
     pullPolicy: IfNotPresent
 
   # Set to false to use external PostgreSQL.
@@ -41,7 +41,7 @@ frontend:
 
   image:
     repository: docker.io/cybergabisoft/ctwall-frontend
-    tag: "1.1.0"
+    tag: "1.2.0"
     pullPolicy: IfNotPresent
 
   env:

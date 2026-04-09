@@ -4,6 +4,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ErrorHandler, computed,
 import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -23,12 +24,15 @@ import {
 import { DataTableExpandedDetailsComponent } from '../../../../shared/ui/data-table/data-table-expanded-details.component';
 import { AlertsApi, AlertGroupsListQuery, AlertOccurrencesListQuery } from '../../data-access/alerts.api';
 import {
+  AlertDetectionMode,
+  AlertDetectionModeState,
   AlertDedupRule,
   AlertDedupScope,
   AlertGroup,
   AlertMinSeverity,
   AlertOccurrence,
   AlertingConnectorState,
+  PutAlertDetectionModesRequest,
   PutAlertDedupRulesRequest
 } from '../../data-access/alerts.types';
 import { LoadState } from '../../../../shared/types/load-state';
@@ -113,14 +117,22 @@ import {
   occurrenceValueForTable,
 } from './security-alerts.view';
 const DEDUP_MIN_SEVERITY_OPTIONS: AlertMinSeverity[] = ['INFO', 'WARNING', 'ERROR'];
+const DETECTION_MODE_SEVERITY_OPTIONS: AlertMinSeverity[] = ['ERROR', 'WARNING', 'INFO'];
+const DETECTION_MODE_ORDER: AlertDetectionMode[] = ['PURL_VERSION_SMART', 'PURL_CONTAINS_PREFIX'];
 type AlertsTableKind = 'groups' | 'occurrences';
 type DedupScopeBuilderOption = AlertDedupScope | 'ALL';
+type AlertDetectionModeFormState = {
+  mode: AlertDetectionMode;
+  enabled: boolean;
+  severity: AlertMinSeverity;
+};
 
 @Component({
   selector: 'app-security-alerts',
   imports: [
     MatCardModule,
     MatButtonModule,
+    MatCheckboxModule,
     MatFormFieldModule,
     MatSelectModule,
     MatTooltipModule,
@@ -338,6 +350,28 @@ export class SecurityAlertsComponent {
   readonly products = signal<Array<{ id: string; name: string }>>([]);
   readonly scopes = signal<Array<{ id: string; name: string }>>([]);
   readonly tests = signal<Array<{ id: string; name: string }>>([]);
+  readonly canManageDetectionModes = computed(() => this.projectContext.canWrite());
+  readonly detectionModesStatus = signal<LoadState>('idle');
+  readonly detectionModesError = signal<string | null>(null);
+  readonly detectionModes = signal<AlertDetectionModeFormState[]>([]);
+  readonly detectionModesSavedSnapshot = signal<AlertDetectionModeFormState[]>([]);
+  readonly detectionModesSaving = signal(false);
+  readonly detectionModeSeverityOptions = DETECTION_MODE_SEVERITY_OPTIONS;
+  readonly detectionModesDirty = computed(() => {
+    return this.serializeDetectionModes(this.detectionModes()) !== this.serializeDetectionModes(this.detectionModesSavedSnapshot());
+  });
+  readonly detectionModeCode = (mode: AlertDetectionMode): string => {
+    if (mode === 'PURL_VERSION_SMART') {
+      return 'purl_version_smart';
+    }
+    return 'purl_contains_prefix';
+  };
+  readonly detectionModeDescription = (mode: AlertDetectionMode): string => {
+    if (mode === 'PURL_VERSION_SMART') {
+      return 'Primary match mode: exact PURL+version when available, fallback to prefix for unknown versions.';
+    }
+    return 'Prediction mode: prefix/base PURL matching for broader suspicious-package coverage.';
+  };
   readonly canManageDedupRules = computed(() => this.projectContext.canWrite());
 
   readonly dedupRulesStatus = signal<LoadState>('idle');
@@ -378,7 +412,7 @@ export class SecurityAlertsComponent {
       lastProjectId = pid;
       this.resetToDefaults();
       // Tables are refreshed by query-driven effects above; here we only refresh config panels.
-      void Promise.all([this.refreshDedupRules(true), this.refreshJiraConnector(true)]);
+      void Promise.all([this.refreshDetectionModes(true), this.refreshDedupRules(true), this.refreshJiraConnector(true)]);
     });
 
     // Fetch groups when applied query or pagination changes.
@@ -431,6 +465,7 @@ export class SecurityAlertsComponent {
       await Promise.all([
         this.refreshAlertsTable('groups', forceSpinner),
         this.refreshAlertsTable('occurrences', forceSpinner),
+        this.refreshDetectionModes(forceSpinner),
         this.refreshDedupRules(forceSpinner),
         this.refreshJiraConnector(forceSpinner)
       ]);
@@ -438,6 +473,74 @@ export class SecurityAlertsComponent {
       if (!forceSpinner) {
         this.silentRefreshInFlight = false;
       }
+    }
+  }
+
+  async refreshDetectionModes(forceSpinner: boolean): Promise<void> {
+    const hadLoaded = untracked(() => this.detectionModesStatus()) === 'loaded';
+    if (forceSpinner || !hadLoaded) {
+      this.detectionModesStatus.set('loading');
+      this.detectionModesError.set(null);
+    }
+    try {
+      const items = await this.api.listAlertDetectionModes();
+      const normalized = this.normalizeDetectionModes(items ?? []);
+      this.detectionModes.set(normalized);
+      this.detectionModesSavedSnapshot.set(normalized);
+      this.detectionModesStatus.set('loaded');
+    } catch (error) {
+      if (!forceSpinner && hadLoaded) {
+        return;
+      }
+      this.errorHandler.handleError(error);
+      this.detectionModesStatus.set('error');
+      this.detectionModesError.set('Failed to load alert detection modes.');
+    }
+  }
+
+  setDetectionModeEnabled(mode: AlertDetectionMode, enabled: boolean): void {
+    if (!this.canManageDetectionModes()) {
+      return;
+    }
+    this.detectionModes.update((items) =>
+      items.map((item) => (item.mode === mode ? { ...item, enabled } : item))
+    );
+  }
+
+  setDetectionModeSeverity(mode: AlertDetectionMode, value: string): void {
+    if (!this.canManageDetectionModes()) {
+      return;
+    }
+    const severity = this.normalizeDetectionModeSeverity(value);
+    this.detectionModes.update((items) =>
+      items.map((item) => (item.mode === mode ? { ...item, severity } : item))
+    );
+  }
+
+  async saveDetectionModes(): Promise<void> {
+    if (!this.canManageDetectionModes() || this.detectionModesSaving() || !this.detectionModesDirty()) {
+      return;
+    }
+    this.detectionModesSaving.set(true);
+    this.detectionModesError.set(null);
+    try {
+      const payload: PutAlertDetectionModesRequest = {
+        modes: this.detectionModes().map((item) => ({
+          mode: item.mode,
+          enabled: item.enabled,
+          severity: item.severity
+        }))
+      };
+      const saved = await this.api.putAlertDetectionModes(payload);
+      const normalized = this.normalizeDetectionModes(saved ?? []);
+      this.detectionModes.set(normalized);
+      this.detectionModesSavedSnapshot.set(normalized);
+      await this.refreshAlertsTable('groups', true);
+    } catch (error) {
+      this.errorHandler.handleError(error);
+      this.detectionModesError.set('Failed to save alert detection modes.');
+    } finally {
+      this.detectionModesSaving.set(false);
     }
   }
 
@@ -640,6 +743,73 @@ export class SecurityAlertsComponent {
       return 'GLOBAL';
     }
     return scope;
+  }
+
+  private normalizeDetectionModes(items: AlertDetectionModeState[]): AlertDetectionModeFormState[] {
+    const defaults = new Map<AlertDetectionMode, AlertDetectionModeFormState>([
+      [
+        'PURL_VERSION_SMART',
+        {
+          mode: 'PURL_VERSION_SMART',
+          enabled: true,
+          severity: 'ERROR'
+        }
+      ],
+      [
+        'PURL_CONTAINS_PREFIX',
+        {
+          mode: 'PURL_CONTAINS_PREFIX',
+          enabled: false,
+          severity: 'WARNING'
+        }
+      ]
+    ]);
+
+    for (const raw of items) {
+      const mode = (raw?.mode ?? '').trim().toUpperCase();
+      if (!this.isDetectionMode(mode)) {
+        continue;
+      }
+      defaults.set(mode, {
+        mode,
+        enabled: !!raw.enabled,
+        severity: this.normalizeDetectionModeSeverity(raw.severity)
+      });
+    }
+
+    return DETECTION_MODE_ORDER.map((mode) => defaults.get(mode)!).map((item) => ({ ...item }));
+  }
+
+  private isDetectionMode(value: string): value is AlertDetectionMode {
+    return value === 'PURL_VERSION_SMART' || value === 'PURL_CONTAINS_PREFIX';
+  }
+
+  private normalizeDetectionModeSeverity(value: string): AlertMinSeverity {
+    const normalized = (value ?? '').trim().toUpperCase();
+    if (normalized === 'ERROR') {
+      return 'ERROR';
+    }
+    if (normalized === 'WARN' || normalized === 'WARNING') {
+      return 'WARNING';
+    }
+    return 'INFO';
+  }
+
+  private serializeDetectionModes(items: AlertDetectionModeFormState[]): string {
+    return [...items]
+      .sort((left, right) => this.detectionModeSortRank(left.mode) - this.detectionModeSortRank(right.mode))
+      .map((item) => `${item.mode}:${item.enabled ? '1' : '0'}:${item.severity}`)
+      .join('|');
+  }
+
+  private detectionModeSortRank(mode: AlertDetectionMode): number {
+    if (mode === 'PURL_VERSION_SMART') {
+      return 1;
+    }
+    if (mode === 'PURL_CONTAINS_PREFIX') {
+      return 2;
+    }
+    return 100;
   }
 
   async saveJiraDedupBinding(): Promise<void> {
@@ -977,5 +1147,11 @@ export class SecurityAlertsComponent {
       severity: ['ERROR']
     });
     this.occurrencesPageIndex.set(0);
+
+    this.detectionModesStatus.set('idle');
+    this.detectionModesError.set(null);
+    this.detectionModes.set([]);
+    this.detectionModesSavedSnapshot.set([]);
+    this.detectionModesSaving.set(false);
   }
 }

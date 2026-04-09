@@ -41,4 +41,5 @@ type ComponentAnalysisFindingInput struct {
 	MalwarePURL                string
 	SourceMalwareInputResultID uuid.UUID
 	MatchType                  string
+	DetectionMode              string
 }

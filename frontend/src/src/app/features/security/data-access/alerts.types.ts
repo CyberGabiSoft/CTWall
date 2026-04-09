@@ -141,3 +141,28 @@ export interface PutAlertDedupRulesRequest {
     enabled?: boolean;
   }>;
 }
+
+export type AlertDetectionMode = 'PURL_VERSION_SMART' | 'PURL_CONTAINS_PREFIX';
+export type AlertDetectionModeSeverity = 'INFO' | 'WARN' | 'ERROR';
+
+export interface AlertDetectionModeState {
+  id: string;
+  projectId: string;
+  mode: AlertDetectionMode;
+  enabled: boolean;
+  severity: AlertDetectionModeSeverity;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertDetectionModesResponse {
+  items: AlertDetectionModeState[];
+}
+
+export interface PutAlertDetectionModesRequest {
+  modes: Array<{
+    mode: AlertDetectionMode;
+    enabled: boolean;
+    severity: AlertMinSeverity;
+  }>;
+}

@@ -71,6 +71,7 @@ Rules:
 - KPIs and timelines for ingest/sync,
 - score `Safe products / total products`,
 - inventory/top breakdown,
+- full data reload is triggered when user enters the tab,
 - direct navigation to Explorer via `Open Explorer`.
 
 ## 7. Security -> Explorer
@@ -81,6 +82,7 @@ Scope:
 
 1. `Malware` (overview)
 - malware summary table per test,
+- table input is refreshed on each tab entry,
 - drill-down to test details.
 
 2. `Analysis` (`/security/explorer/runs`)
@@ -105,6 +107,7 @@ Permissions:
 Scope:
 
 - source registry,
+- source registry data reloads on tab entry,
 - sync full/latest,
 - recompute source/summaries,
 - sync/recompute history,
@@ -128,14 +131,19 @@ Scope:
 2. `All alerts`
 - append-only occurrence stream.
 
-3. `Dedup rules`
+3. `Detection modes`
+- `purl_version_smart` and `purl_contains_prefix` can be enabled independently,
+- each mode has its own alert severity (`ERROR` / `WARNING` / `INFO`).
+
+4. `Dedup rules`
 - deduplication policy configuration.
 
-4. `Jira routing`
+5. `Jira routing`
 - binding of routing rule to connector profile.
 
 Permissions:
 
+- detection modes: project `WRITER+`,
 - dedup rules: project `WRITER+`,
 - JIRA routing: project `ADMIN`,
 - acknowledge/close: project `ADMIN`.

@@ -139,9 +139,12 @@ func TestProcessJob_PURLVersionSmart_UsesOSVVersionsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list findings outside versions list: %v", err)
 	}
-	if len(findingsOutside) != 0 {
-		t.Fatalf("expected no findings for %q, got %#v", componentOutsideOSVList, findingsOutside)
+	for _, finding := range findingsOutside {
+		if finding.MatchType == store.ComponentAnalysisMatchExact {
+			t.Fatalf("expected no EXACT finding for %q, got %#v", componentOutsideOSVList, finding)
+		}
 	}
+	assertFinding(t, findingsOutside, "pkg:deb/debian/apt", store.ComponentAnalysisMatchContainsPrefix)
 }
 
 func parseTrivyFixture(t *testing.T) *sbom.Document {

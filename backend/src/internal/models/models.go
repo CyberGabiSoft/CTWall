@@ -393,6 +393,17 @@ type AlertDedupRule struct {
 	UpdatedAt   time.Time  `json:"updatedAt" db:"updated_at"`
 }
 
+// AlertDetectionMode stores per-project mode configuration for malware alert generation.
+type AlertDetectionMode struct {
+	ID        uuid.UUID `json:"id" db:"id"`
+	ProjectID uuid.UUID `json:"projectId" db:"project_id"`
+	Mode      string    `json:"mode" db:"mode"`         // PURL_VERSION_SMART|PURL_CONTAINS_PREFIX
+	Enabled   bool      `json:"enabled" db:"enabled"`   // whether mode contributes alerts
+	Severity  string    `json:"severity" db:"severity"` // INFO|WARN|ERROR
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+}
+
 // AlertOccurrence represents a single occurrence (append-only) associated with an AlertGroup.
 type AlertOccurrence struct {
 	ID        uuid.UUID `json:"id" db:"id"`

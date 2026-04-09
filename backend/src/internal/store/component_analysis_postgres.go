@@ -596,6 +596,10 @@ func (s *PostgresStore) UpsertComponentAnalysisFinding(input ComponentAnalysisFi
 		return nil, ErrInvalidPayload
 	}
 	matchType := normalizeComponentAnalysisMatchType(input.MatchType)
+	detectionMode := normalizeAlertDetectionMode(input.DetectionMode)
+	if detectionMode == AlertDetectionMode("") {
+		detectionMode = AlertDetectionModePURLVersionSmart
+	}
 
 	ctx, cancel := s.ctx()
 	defer cancel()
@@ -644,12 +648,19 @@ func (s *PostgresStore) UpsertComponentAnalysisFinding(input ComponentAnalysisFi
 	// Best-effort: ensure malware.detected alert occurrences exist for active contexts.
 	// This must run for both INSERT and UPDATE because a mapping can already exist globally
 	// while appearing in a new active revision/project context only now.
-	if created, err := s.CreateMalwareDetectedAlertOccurrences(finding.ComponentPURL, finding.MalwarePURL); err != nil {
+	if created, err := s.CreateMalwareDetectedAlertOccurrences(
+		finding.ComponentPURL,
+		finding.MalwarePURL,
+		detectionMode,
+		matchType,
+	); err != nil {
 		slog.Error(
 			"failed to create malware detected alert occurrences",
 			"component", "store.alerts.malware_detected",
 			"component_purl", finding.ComponentPURL,
 			"malware_purl", finding.MalwarePURL,
+			"detection_mode", detectionMode,
+			"match_type", matchType,
 			"inserted", inserted,
 			"created", created,
 			"error", err,

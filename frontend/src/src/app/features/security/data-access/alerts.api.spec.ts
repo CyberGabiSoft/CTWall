@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideHttp } from '../../../core/providers/http';
 import { AlertsApi } from './alerts.api';
+import { PutAlertDetectionModesRequest } from './alerts.types';
 
 describe('AlertsApi (TestBed)', () => {
   it('requests alert groups with pagination', async () => {
@@ -66,6 +67,64 @@ describe('AlertsApi (TestBed)', () => {
     req.flush(null);
 
     await expect(promise).resolves.toBeUndefined();
+    http.verify();
+  });
+
+  it('lists alert detection modes', async () => {
+    await TestBed.configureTestingModule({
+      providers: [AlertsApi, ...provideHttp(), provideHttpClientTesting()]
+    }).compileComponents();
+
+    const api = TestBed.inject(AlertsApi);
+    const http = TestBed.inject(HttpTestingController);
+
+    const promise = api.listAlertDetectionModes();
+    const req = http.expectOne('/api/v1/alerting/detection-modes');
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      items: [
+        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
+        { mode: 'PURL_CONTAINS_PREFIX', enabled: false, severity: 'WARN' }
+      ]
+    });
+
+    await expect(promise).resolves.toEqual([
+      { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
+      { mode: 'PURL_CONTAINS_PREFIX', enabled: false, severity: 'WARN' }
+    ]);
+    http.verify();
+  });
+
+  it('updates alert detection modes', async () => {
+    await TestBed.configureTestingModule({
+      providers: [AlertsApi, ...provideHttp(), provideHttpClientTesting()]
+    }).compileComponents();
+
+    const api = TestBed.inject(AlertsApi);
+    const http = TestBed.inject(HttpTestingController);
+
+    const payload: PutAlertDetectionModesRequest = {
+      modes: [
+        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
+        { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARNING' }
+      ]
+    };
+
+    const promise = api.putAlertDetectionModes(payload);
+    const req = http.expectOne('/api/v1/alerting/detection-modes');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual(payload);
+    req.flush({
+      items: [
+        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
+        { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARN' }
+      ]
+    });
+
+    await expect(promise).resolves.toEqual([
+      { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
+      { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARN' }
+    ]);
     http.verify();
   });
 });

@@ -184,7 +184,12 @@ func TestCreateMalwareDetectedAlertOccurrences_UsesTestDedupRule(t *testing.T) {
 		t.Fatalf("replace dedup rules: %v", err)
 	}
 
-	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(componentPURL, malwarePURL)
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLVersionSmart,
+		store.ComponentAnalysisMatchExact,
+	)
 	if err != nil {
 		t.Fatalf("create malware alert occurrences: %v", err)
 	}
@@ -316,7 +321,12 @@ func TestCreateMalwareDetectedAlertOccurrences_DoesNotReopenFixedInOtherTests(t 
 		t.Fatalf("set triage FIXED for test B: %v", err)
 	}
 
-	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(componentPURL, malwarePURL)
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLVersionSmart,
+		store.ComponentAnalysisMatchExact,
+	)
 	if err != nil {
 		t.Fatalf("create malware alert occurrences: %v", err)
 	}

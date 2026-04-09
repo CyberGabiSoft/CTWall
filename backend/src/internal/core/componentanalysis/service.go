@@ -409,34 +409,62 @@ func (s *Service) processJob(ctx context.Context, componentPURL string) error {
 		if err != nil {
 			return err
 		}
-		inputByMalware := make(map[string]store.ComponentAnalysisFindingInput, len(candidates))
+		inputByModeAndMalware := make(map[string]store.ComponentAnalysisFindingInput, len(candidates)*2)
+		putFindingInput := func(mode store.AlertDetectionMode, input store.ComponentAnalysisFindingInput) {
+			modeKey := strings.ToUpper(strings.TrimSpace(string(mode)))
+			malwareKey := strings.TrimSpace(input.MalwarePURL)
+			if modeKey == "" || malwareKey == "" {
+				return
+			}
+			key := modeKey + "|" + malwareKey
+			if prev, ok := inputByModeAndMalware[key]; ok {
+				if matchPriority(input.MatchType) <= matchPriority(prev.MatchType) {
+					return
+				}
+			}
+			inputByModeAndMalware[key] = input
+		}
 		for _, candidate := range candidates {
 			matched, matchType, malwarePURL := matchSmart(componentPURL, candidate)
-			if !matched {
-				continue
+			if matched {
+				malwarePURL = strings.TrimSpace(malwarePURL)
+				if malwarePURL != "" && candidate.SourceMalwareInputResultID != uuid.Nil {
+					putFindingInput(
+						store.AlertDetectionModePURLVersionSmart,
+						store.ComponentAnalysisFindingInput{
+							ComponentPURL:              componentPURL,
+							MalwarePURL:                malwarePURL,
+							SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
+							MatchType:                  matchType,
+							DetectionMode:              string(store.AlertDetectionModePURLVersionSmart),
+						},
+					)
+				}
 			}
-			malwarePURL = strings.TrimSpace(malwarePURL)
-			if malwarePURL == "" || candidate.SourceMalwareInputResultID == uuid.Nil {
-				continue
-			}
-			next := store.ComponentAnalysisFindingInput{
-				ComponentPURL:              componentPURL,
-				MalwarePURL:                malwarePURL,
-				SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
-				MatchType:                  matchType,
-			}
-			if prev, ok := inputByMalware[malwarePURL]; !ok || matchPriority(next.MatchType) > matchPriority(prev.MatchType) {
-				inputByMalware[malwarePURL] = next
+			if matchedPrefix, prefixPURL := matchContainsPrefix(componentPURL, candidate); matchedPrefix {
+				prefixPURL = strings.TrimSpace(prefixPURL)
+				if prefixPURL != "" && candidate.SourceMalwareInputResultID != uuid.Nil {
+					putFindingInput(
+						store.AlertDetectionModePURLContainsPrefix,
+						store.ComponentAnalysisFindingInput{
+							ComponentPURL:              componentPURL,
+							MalwarePURL:                prefixPURL,
+							SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
+							MatchType:                  store.ComponentAnalysisMatchContainsPrefix,
+							DetectionMode:              string(store.AlertDetectionModePURLContainsPrefix),
+						},
+					)
+				}
 			}
 		}
 
-		malwarePURLs := make([]string, 0, len(inputByMalware))
-		for malwarePURL := range inputByMalware {
-			malwarePURLs = append(malwarePURLs, malwarePURL)
+		keys := make([]string, 0, len(inputByModeAndMalware))
+		for key := range inputByModeAndMalware {
+			keys = append(keys, key)
 		}
-		sort.Strings(malwarePURLs)
-		for _, malwarePURL := range malwarePURLs {
-			input := inputByMalware[malwarePURL]
+		sort.Strings(keys)
+		for _, key := range keys {
+			input := inputByModeAndMalware[key]
 			if _, err := s.store.UpsertComponentAnalysisFinding(input); err != nil {
 				return err
 			}
@@ -457,9 +485,21 @@ func (s *Service) processJob(ctx context.Context, componentPURL string) error {
 				MalwarePURL:                result.ComponentPURL,
 				SourceMalwareInputResultID: result.ID,
 				MatchType:                  matchType,
+				DetectionMode:              string(store.AlertDetectionModePURLVersionSmart),
 			})
 			if err != nil {
 				return err
+			}
+			if matchedPrefix, prefixPURL := matchContainsPrefix(componentPURL, store.MalwareMatchCandidate{ComponentPURL: result.ComponentPURL}); matchedPrefix {
+				if _, err := s.store.UpsertComponentAnalysisFinding(store.ComponentAnalysisFindingInput{
+					ComponentPURL:              componentPURL,
+					MalwarePURL:                prefixPURL,
+					SourceMalwareInputResultID: result.ID,
+					MatchType:                  store.ComponentAnalysisMatchContainsPrefix,
+					DetectionMode:              string(store.AlertDetectionModePURLContainsPrefix),
+				}); err != nil {
+					return err
+				}
 			}
 		}
 	}

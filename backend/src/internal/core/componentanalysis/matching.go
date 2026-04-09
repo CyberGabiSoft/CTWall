@@ -44,6 +44,18 @@ func matchSmart(componentPURL string, candidate store.MalwareMatchCandidate) (bo
 	return true, store.ComponentAnalysisMatchContainsPrefix, malwareBase
 }
 
+func matchContainsPrefix(componentPURL string, candidate store.MalwareMatchCandidate) (bool, string) {
+	componentBase, _ := normalizePURLBaseAndVersion(componentPURL)
+	malwareBase, _ := normalizePURLBaseAndVersion(candidate.ComponentPURL)
+	if componentBase == "" || malwareBase == "" {
+		return false, ""
+	}
+	if !strings.EqualFold(componentBase, malwareBase) {
+		return false, ""
+	}
+	return true, malwareBase
+}
+
 type osvDetailsForMatch struct {
 	Affected []osvAffectedForMatch `json:"affected"`
 }

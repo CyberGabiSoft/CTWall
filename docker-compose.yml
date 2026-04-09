@@ -37,7 +37,7 @@ services:
       - ctwall
 
   ctwall-initializer:
-    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.1.0}
+    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.2.0}
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
@@ -58,7 +58,7 @@ services:
       - ctwall
 
   ctwall-backend:
-    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.1.0}
+    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.2.0}
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
@@ -85,7 +85,7 @@ services:
       - ctwall
 
   ctwall-frontend:
-    image: ${CTWALL_FRONTEND_IMAGE:-cybergabisoft/ctwall-frontend:1.1.0}
+    image: ${CTWALL_FRONTEND_IMAGE:-cybergabisoft/ctwall-frontend:1.2.0}
     build:
       context: ./frontend
       dockerfile: docker/Dockerfile

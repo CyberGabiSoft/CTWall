@@ -2,6 +2,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
+  AlertDetectionModeState,
+  AlertDetectionModesResponse,
   AlertDedupRule,
   AlertDedupRulesResponse,
   AlertGroupsListResponse,
@@ -10,6 +12,7 @@ import {
   AlertingConnectorState,
   AlertingConnectorType,
   AlertingConnectorUpsertRequest,
+  PutAlertDetectionModesRequest,
   PutAlertDedupRulesRequest
 } from './alerts.types';
 
@@ -136,6 +139,16 @@ export class AlertsApi {
   async putAlertDedupRules(payload: PutAlertDedupRulesRequest, alertType = 'malware.detected'): Promise<AlertDedupRule[]> {
     const params = new HttpParams().set('alertType', alertType);
     const response = await firstValueFrom(this.http.put<AlertDedupRulesResponse>('/alerting/dedup-rules', payload, { params }));
+    return response.items ?? [];
+  }
+
+  async listAlertDetectionModes(): Promise<AlertDetectionModeState[]> {
+    const response = await firstValueFrom(this.http.get<AlertDetectionModesResponse>('/alerting/detection-modes'));
+    return response.items ?? [];
+  }
+
+  async putAlertDetectionModes(payload: PutAlertDetectionModesRequest): Promise<AlertDetectionModeState[]> {
+    const response = await firstValueFrom(this.http.put<AlertDetectionModesResponse>('/alerting/detection-modes', payload));
     return response.items ?? [];
   }
 }

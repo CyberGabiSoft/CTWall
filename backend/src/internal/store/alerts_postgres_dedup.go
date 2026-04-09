@@ -387,40 +387,48 @@ LIMIT 1
 	return &item, nil
 }
 
-func buildMalwareDetectedGroupKey(projectID uuid.UUID, malwarePURL string, rule *models.AlertDedupRule, productID, scopeID, testID *uuid.UUID) string {
+func buildMalwareDetectedGroupKey(projectID uuid.UUID, malwarePURL string, rule *models.AlertDedupRule, productID, scopeID, testID *uuid.UUID, detectionMode AlertDetectionMode) string {
+	modeKey := alertDetectionModeKey(detectionMode)
+	if modeKey == "" {
+		modeKey = alertDetectionModeKey(AlertDetectionModePURLVersionSmart)
+	}
 	scope := normalizeAlertDedupScope(rule.DedupScope)
 	switch scope {
 	case AlertDedupScopeTest:
 		if testID != nil {
 			return fmt.Sprintf(
-				"project:%s|type:malware.detected|dedup_on:test|test_id:%s|malware_purl:%s",
+				"project:%s|type:malware.detected|dedup_on:test|test_id:%s|detect_mode:%s|malware_purl:%s",
 				projectID.String(),
 				testID.String(),
+				modeKey,
 				malwarePURL,
 			)
 		}
 	case AlertDedupScopeScope:
 		if scopeID != nil {
 			return fmt.Sprintf(
-				"project:%s|type:malware.detected|dedup_on:scope|scope_id:%s|malware_purl:%s",
+				"project:%s|type:malware.detected|dedup_on:scope|scope_id:%s|detect_mode:%s|malware_purl:%s",
 				projectID.String(),
 				scopeID.String(),
+				modeKey,
 				malwarePURL,
 			)
 		}
 	case AlertDedupScopeProduct:
 		if productID != nil {
 			return fmt.Sprintf(
-				"project:%s|type:malware.detected|dedup_on:product|product_id:%s|malware_purl:%s",
+				"project:%s|type:malware.detected|dedup_on:product|product_id:%s|detect_mode:%s|malware_purl:%s",
 				projectID.String(),
 				productID.String(),
+				modeKey,
 				malwarePURL,
 			)
 		}
 	}
 	return fmt.Sprintf(
-		"project:%s|type:malware.detected|malware_purl:%s",
+		"project:%s|type:malware.detected|detect_mode:%s|malware_purl:%s",
 		projectID.String(),
+		modeKey,
 		malwarePURL,
 	)
 }

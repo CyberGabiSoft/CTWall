@@ -104,7 +104,7 @@ Build image from `src/ctwall`:
 docker build -t ctwall-backend:local -f backend/docker/Dockerfile backend
 
 # Option B: pull published image
-docker pull cybergabisoft/ctwall-backend:1.1.0
+docker pull cybergabisoft/ctwall-backend:1.2.0
 ```
 
 Run backend via Docker Compose (recommended):
