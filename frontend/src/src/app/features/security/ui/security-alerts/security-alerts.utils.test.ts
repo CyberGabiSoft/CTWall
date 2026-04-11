@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   connectorRouteIds,
+  groupDetectionMode,
   groupDedupRule,
   isNilUUID,
   matchesAdvancedFilter,
   normalizeDedupRules,
+  normalizeDetectionModeCode,
+  occurrenceDetectionMode,
   normalizeMinSeverity,
   serializeDedupRules
 } from './security-alerts.utils';
@@ -19,6 +22,12 @@ describe('security-alerts.utils', () => {
   it('resolves dedup rule label from group key', () => {
     expect(groupDedupRule('dedup_on:test|test_id:abc-123')).toBe('TEST (abc-123)');
     expect(groupDedupRule('dedup_on:global')).toBe('GLOBAL');
+  });
+
+  it('normalizes and extracts detection modes', () => {
+    expect(normalizeDetectionModeCode('PURL_VERSION_SMART')).toBe('purl_version_smart');
+    expect(groupDetectionMode('detect_mode:purl_contains_prefix|dedup_on:test')).toBe('purl_contains_prefix');
+    expect(occurrenceDetectionMode({ detectMode: 'PURL_CONTAINS_PREFIX' })).toBe('purl_contains_prefix');
   });
 
   it('normalizes severity and dedup rules serialization', () => {

@@ -85,6 +85,39 @@ export function groupDedupRule(groupKey: string | null | undefined): string {
   return 'GLOBAL';
 }
 
+export function normalizeDetectionModeCode(value: string | null | undefined): string {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (normalized === 'purl_version_smart') {
+    return 'purl_version_smart';
+  }
+  if (normalized === 'purl_contains_prefix') {
+    return 'purl_contains_prefix';
+  }
+  if (normalized === 'purl-version-smart') {
+    return 'purl_version_smart';
+  }
+  if (normalized === 'purl-contains-prefix') {
+    return 'purl_contains_prefix';
+  }
+  if (normalized === 'purlversionsmart') {
+    return 'purl_version_smart';
+  }
+  if (normalized === 'purlcontainsprefix') {
+    return 'purl_contains_prefix';
+  }
+  return '';
+}
+
+export function groupDetectionMode(groupKey: string | null | undefined): string {
+  const mode = normalizeDetectionModeCode(groupKeyPart(groupKey, 'detect_mode'));
+  return mode || '-';
+}
+
+export function occurrenceDetectionMode(details: unknown): string {
+  const mode = normalizeDetectionModeCode(detailsStringValue(details, 'detectMode'));
+  return mode || '-';
+}
+
 export function isKnownKey<T extends string>(value: string, keys: readonly T[]): value is T {
   return keys.includes(value as T);
 }

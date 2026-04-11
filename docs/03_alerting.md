@@ -7,6 +7,8 @@ CTWall alerting is built around an Alertmanager-centric runtime:
      - `purl_version_smart` (default enabled),
      - `purl_contains_prefix` (default disabled).
    - Each mode has independent per-project alert severity (`ERROR/WARNING/INFO`).
+   - Mode is encoded into malware group key (`detect_mode:...`) so both modes can emit separate alerts for the same malware PURL.
+   - Group severity is synchronized with active mode severity on both reconcile and occurrence upsert paths.
 2. Backend emits FIRING/RESOLVED lifecycle signals with dedup context.
 3. Connectors are dispatched in one best-effort cycle (Slack, Discord, SMTP, SNS, Jira, and optional external Alertmanager).
 4. Failure on one connector does not block successful delivery on other enabled connectors.

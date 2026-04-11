@@ -746,11 +746,13 @@ export class SecuritySourcesComponent implements OnInit {
     effect(() => {
       const sourceId = this.selectedSourceId();
       if (sourceId) {
-        void this.store.refreshSyncHistory(sourceId);
-        const findingsStatus = untracked(() => this.store.getFindingsStatus(sourceId));
-        if (findingsStatus === 'loaded') {
-          void this.store.refreshFindings(sourceId, true);
-        }
+        untracked(() => {
+          void this.store.refreshSyncHistory(sourceId);
+          const findingsStatus = this.store.getFindingsStatus(sourceId);
+          if (findingsStatus === 'loaded') {
+            void this.store.refreshFindings(sourceId, true);
+          }
+        });
       }
     });
 
@@ -779,12 +781,16 @@ export class SecuritySourcesComponent implements OnInit {
     effect(() => {
       const mode = this.recomputeHistoryMode();
       if (mode === 'summaries') {
-        void this.store.refreshSummaryRecomputeHistory();
+        untracked(() => {
+          void this.store.refreshSummaryRecomputeHistory();
+        });
         return;
       }
       const sourceId = this.selectedSourceId();
       if (sourceId) {
-        void this.store.refreshSourceResultsRecomputeHistory(sourceId);
+        untracked(() => {
+          void this.store.refreshSourceResultsRecomputeHistory(sourceId);
+        });
       }
     });
 

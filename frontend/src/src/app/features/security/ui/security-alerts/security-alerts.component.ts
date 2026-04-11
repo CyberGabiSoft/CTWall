@@ -194,6 +194,7 @@ export class SecurityAlertsComponent {
     'status',
     'category',
     'type',
+    'detectionMode',
     'dedupRule',
     'title',
     'occurrences',
@@ -238,7 +239,6 @@ export class SecurityAlertsComponent {
   private readonly groupsAppliedQuery = signal<AlertGroupsListQuery>({
     page: 1,
     pageSize: 50,
-    severity: ['ERROR'],
     status: ['OPEN']
   });
 
@@ -268,6 +268,7 @@ export class SecurityAlertsComponent {
     'severity',
     'category',
     'type',
+    'detectionMode',
     'title',
     'occurredAt',
     'entityRef'
@@ -309,8 +310,7 @@ export class SecurityAlertsComponent {
   // Server query snapshot (drives backend calls).
   private readonly occurrencesAppliedQuery = signal<AlertOccurrencesListQuery>({
     page: 1,
-    pageSize: 50,
-    severity: ['ERROR']
+    pageSize: 50
   });
 
   // Expandable rows for occurrences.
@@ -1136,15 +1136,13 @@ export class SecurityAlertsComponent {
     this.groupsAppliedQuery.set({
       page: 1,
       pageSize: this.groupsPageSize(),
-      severity: ['ERROR'],
       status: ['OPEN']
     });
     this.groupsPageIndex.set(0);
 
     this.occurrencesAppliedQuery.set({
       page: 1,
-      pageSize: this.occurrencesPageSize(),
-      severity: ['ERROR']
+      pageSize: this.occurrencesPageSize()
     });
     this.occurrencesPageIndex.set(0);
 

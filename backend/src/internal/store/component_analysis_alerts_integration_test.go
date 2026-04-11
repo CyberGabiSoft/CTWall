@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"backend/internal/eventmeta"
 	"backend/internal/store"
 	"backend/internal/tests"
 
@@ -777,6 +778,315 @@ func TestCreateMalwareDetectedAlertOccurrences_DoesNotAutoReopenFixed(t *testing
 	}
 	if summary.MalwareComponentCount != 0 {
 		t.Fatalf("expected summary count 0 when triage stays FIXED, got %d", summary.MalwareComponentCount)
+	}
+}
+
+func TestReconcileMalwareAlertGroupsForProject_UpdatesModeSeverity(t *testing.T) {
+	storeInstance, db := tests.NewPostgresTestStore(t)
+
+	product, err := storeInstance.CreateProduct("alerts-reconcile-severity-product", "")
+	if err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	scope, err := storeInstance.CreateScope(product.ID, "alerts-reconcile-severity-scope", "")
+	if err != nil {
+		t.Fatalf("create scope: %v", err)
+	}
+	testItem, _, err := storeInstance.EnsureTest(scope.ID, "alerts-reconcile-severity-test", "cyclonedx", "1.6")
+	if err != nil {
+		t.Fatalf("ensure test: %v", err)
+	}
+
+	componentPURL := "pkg:pypi/tsplitlgtb-reconcile-severity"
+	malwarePURL := componentPURL
+	resultID := uuid.New()
+
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
+		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
+		resultID, malwarePURL,
+	); err != nil {
+		t.Fatalf("insert analysis result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'CONTAINS_PREFIX', NOW(), NOW())`,
+		componentPURL, malwarePURL, resultID,
+	); err != nil {
+		t.Fatalf("insert mapping: %v", err)
+	}
+
+	sbomSHA := strings.Repeat("k", 64)
+	if _, err := storeInstance.StoreSbom(sbomSHA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
+		t.Fatalf("store sbom: %v", err)
+	}
+	if _, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
+		SbomSha256:   sbomSHA,
+		SbomProducer: "trivy",
+		Components: []store.ComponentInput{
+			{
+				PURL:     componentPURL,
+				PkgName:  "tsplitlgtb-reconcile-severity",
+				Version:  "1.0.0",
+				PkgType:  "pypi",
+				SbomType: "library",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("add revision: %v", err)
+	}
+
+	if _, err := storeInstance.ReplaceAlertDetectionModes(product.ProjectID, []store.AlertDetectionModeInput{
+		{
+			Mode:     store.AlertDetectionModePURLContainsPrefix,
+			Enabled:  true,
+			Severity: eventmeta.SeverityError,
+		},
+	}); err != nil {
+		t.Fatalf("set initial detection modes: %v", err)
+	}
+
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLContainsPrefix,
+		store.ComponentAnalysisMatchContainsPrefix,
+	)
+	if err != nil {
+		t.Fatalf("create prefix alert occurrence: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("expected one created occurrence, got %d", created)
+	}
+
+	groups, _, err := storeInstance.ListAlertGroups(store.AlertGroupsQuery{
+		ProjectID: product.ProjectID,
+		Types:     []string{"malware.detected"},
+		Limit:     50,
+		Offset:    0,
+	})
+	if err != nil {
+		t.Fatalf("list groups before severity change: %v", err)
+	}
+
+	var prefixGroupSeverity string
+	prefixGroupFound := false
+	for i := range groups {
+		if strings.Contains(groups[i].GroupKey, "|detect_mode:purl_contains_prefix|") {
+			prefixGroupSeverity = groups[i].Severity
+			prefixGroupFound = true
+			break
+		}
+	}
+	if !prefixGroupFound {
+		t.Fatalf("expected prefix-mode group, got %+v", groups)
+	}
+	if prefixGroupSeverity != "ERROR" {
+		t.Fatalf("expected initial ERROR severity, got %s", prefixGroupSeverity)
+	}
+
+	if _, err := storeInstance.ReplaceAlertDetectionModes(product.ProjectID, []store.AlertDetectionModeInput{
+		{
+			Mode:     store.AlertDetectionModePURLContainsPrefix,
+			Enabled:  true,
+			Severity: eventmeta.SeverityWarn,
+		},
+	}); err != nil {
+		t.Fatalf("set updated detection modes: %v", err)
+	}
+
+	if _, err := storeInstance.ReconcileMalwareAlertGroupsForProject(product.ProjectID, nil); err != nil {
+		t.Fatalf("reconcile groups: %v", err)
+	}
+
+	groups, _, err = storeInstance.ListAlertGroups(store.AlertGroupsQuery{
+		ProjectID: product.ProjectID,
+		Types:     []string{"malware.detected"},
+		Limit:     50,
+		Offset:    0,
+	})
+	if err != nil {
+		t.Fatalf("list groups after severity change: %v", err)
+	}
+
+	prefixGroupSeverity = ""
+	prefixGroupFound = false
+	for i := range groups {
+		if strings.Contains(groups[i].GroupKey, "|detect_mode:purl_contains_prefix|") {
+			prefixGroupSeverity = groups[i].Severity
+			prefixGroupFound = true
+			break
+		}
+	}
+	if !prefixGroupFound {
+		t.Fatalf("expected prefix-mode group after reconcile, got %+v", groups)
+	}
+	if prefixGroupSeverity != "WARN" {
+		t.Fatalf("expected WARN severity after reconcile, got %s", prefixGroupSeverity)
+	}
+}
+
+func TestCreateMalwareDetectedAlertOccurrences_ReopenUsesUpdatedModeSeverity(t *testing.T) {
+	storeInstance, db := tests.NewPostgresTestStore(t)
+
+	product, err := storeInstance.CreateProduct("alerts-reopen-updated-severity-product", "")
+	if err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	scope, err := storeInstance.CreateScope(product.ID, "alerts-reopen-updated-severity-scope", "")
+	if err != nil {
+		t.Fatalf("create scope: %v", err)
+	}
+	testItem, _, err := storeInstance.EnsureTest(scope.ID, "alerts-reopen-updated-severity-test", "cyclonedx", "1.6")
+	if err != nil {
+		t.Fatalf("ensure test: %v", err)
+	}
+
+	componentPURL := "pkg:pypi/tsplitlgtb-reopen-updated-severity"
+	malwarePURL := componentPURL
+	resultID := uuid.New()
+
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
+		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
+		resultID, malwarePURL,
+	); err != nil {
+		t.Fatalf("insert analysis result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'CONTAINS_PREFIX', NOW(), NOW())`,
+		componentPURL, malwarePURL, resultID,
+	); err != nil {
+		t.Fatalf("insert mapping: %v", err)
+	}
+
+	sbomSHA := strings.Repeat("l", 64)
+	if _, err := storeInstance.StoreSbom(sbomSHA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
+		t.Fatalf("store sbom: %v", err)
+	}
+	if _, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
+		SbomSha256:   sbomSHA,
+		SbomProducer: "trivy",
+		Components: []store.ComponentInput{
+			{
+				PURL:     componentPURL,
+				PkgName:  "tsplitlgtb-reopen-updated-severity",
+				Version:  "1.0.0",
+				PkgType:  "pypi",
+				SbomType: "library",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("add revision: %v", err)
+	}
+
+	if _, err := storeInstance.ReplaceAlertDetectionModes(product.ProjectID, []store.AlertDetectionModeInput{
+		{
+			Mode:     store.AlertDetectionModePURLContainsPrefix,
+			Enabled:  true,
+			Severity: eventmeta.SeverityError,
+		},
+	}); err != nil {
+		t.Fatalf("set initial detection modes: %v", err)
+	}
+
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLContainsPrefix,
+		store.ComponentAnalysisMatchContainsPrefix,
+	)
+	if err != nil {
+		t.Fatalf("create initial prefix alert occurrence: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("expected one created occurrence before close, got %d", created)
+	}
+
+	groups, _, err := storeInstance.ListAlertGroups(store.AlertGroupsQuery{
+		ProjectID: product.ProjectID,
+		Types:     []string{"malware.detected"},
+		Limit:     50,
+		Offset:    0,
+	})
+	if err != nil {
+		t.Fatalf("list groups after first create: %v", err)
+	}
+
+	var prefixGroupID uuid.UUID
+	var prefixGroupSeverity string
+	prefixGroupFound := false
+	for i := range groups {
+		if strings.Contains(groups[i].GroupKey, "|detect_mode:purl_contains_prefix|") {
+			prefixGroupID = groups[i].ID
+			prefixGroupSeverity = groups[i].Severity
+			prefixGroupFound = true
+			break
+		}
+	}
+	if !prefixGroupFound {
+		t.Fatalf("expected prefix-mode group after first create, got %+v", groups)
+	}
+	if prefixGroupSeverity != "ERROR" {
+		t.Fatalf("expected initial ERROR severity, got %s", prefixGroupSeverity)
+	}
+
+	actor, err := storeInstance.CreateUser("alerts-reopen-updated-severity@example.com", "hash", "ADMIN", "USER", "Severity Reopen Actor")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	if err := storeInstance.CloseAlertGroup(product.ProjectID, prefixGroupID, actor.ID); err != nil {
+		t.Fatalf("close prefix group: %v", err)
+	}
+
+	if _, err := storeInstance.ReplaceAlertDetectionModes(product.ProjectID, []store.AlertDetectionModeInput{
+		{
+			Mode:     store.AlertDetectionModePURLContainsPrefix,
+			Enabled:  true,
+			Severity: eventmeta.SeverityWarn,
+		},
+	}); err != nil {
+		t.Fatalf("set updated detection modes: %v", err)
+	}
+
+	created, err = storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLContainsPrefix,
+		store.ComponentAnalysisMatchContainsPrefix,
+	)
+	if err != nil {
+		t.Fatalf("create prefix alert occurrence after severity update: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("expected one created occurrence after close+reopen, got %d", created)
+	}
+
+	groups, _, err = storeInstance.ListAlertGroups(store.AlertGroupsQuery{
+		ProjectID: product.ProjectID,
+		Types:     []string{"malware.detected"},
+		Limit:     50,
+		Offset:    0,
+	})
+	if err != nil {
+		t.Fatalf("list groups after reopen create: %v", err)
+	}
+
+	prefixGroupSeverity = ""
+	prefixGroupFound = false
+	for i := range groups {
+		if strings.Contains(groups[i].GroupKey, "|detect_mode:purl_contains_prefix|") {
+			prefixGroupSeverity = groups[i].Severity
+			prefixGroupFound = true
+			break
+		}
+	}
+	if !prefixGroupFound {
+		t.Fatalf("expected prefix-mode group after reopen create, got %+v", groups)
+	}
+	if prefixGroupSeverity != "WARN" {
+		t.Fatalf("expected WARN severity after reopen create, got %s", prefixGroupSeverity)
 	}
 }
 

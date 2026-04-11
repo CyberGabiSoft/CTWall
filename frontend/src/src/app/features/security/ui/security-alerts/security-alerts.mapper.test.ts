@@ -24,7 +24,7 @@ function createGroup(overrides: Partial<AlertGroup> = {}): AlertGroup {
     category: 'malware',
     type: 'malware.detected',
     status: 'OPEN',
-    groupKey: 'dedup_on:test|test_id:test-1|malware_purl:pkg:npm/bad@1.2.3',
+    groupKey: 'dedup_on:test|test_id:test-1|detect_mode:purl_version_smart|malware_purl:pkg:npm/bad@1.2.3',
     title: 'Malware detected in active revision',
     entityRef: 'pkg:npm/leftpad@1.0.0',
     occurrences: 3,
@@ -50,7 +50,7 @@ function createOccurrence(overrides: Partial<AlertOccurrence> = {}): AlertOccurr
     scopeId: 'scope-1',
     testId: 'test-1',
     entityRef: 'pkg:npm/leftpad@1.0.0',
-    details: { malwarePurl: 'pkg:npm/bad@1.2.3' },
+    details: { malwarePurl: 'pkg:npm/bad@1.2.3', detectMode: 'purl_contains_prefix', matchType: 'CONTAINS_PREFIX' },
     createdAt: '2026-03-17T12:00:00Z',
     ...overrides,
   };
@@ -61,8 +61,10 @@ describe('security-alerts.mapper', () => {
     const group = createGroup();
     const occurrence = createOccurrence();
     expect(alertGroupValue(group, 'dedupRule')).toContain('TEST');
+    expect(alertGroupValue(group, 'detectionMode')).toBe('purl_version_smart');
     expect(alertGroupValue(group, 'occurrences')).toBe('3');
     expect(alertOccurrenceValue(occurrence, 'testId')).toBe('test-1');
+    expect(alertOccurrenceValue(occurrence, 'detectionMode')).toBe('purl_contains_prefix');
     expect(alertOccurrenceValue(occurrence, 'groupId')).toBe('group-1');
   });
 
@@ -109,6 +111,7 @@ describe('security-alerts.mapper', () => {
         status: '',
         category: '',
         type: '',
+        detectionMode: '',
         dedupRule: '',
         title: '',
         occurrences: '',
@@ -122,6 +125,7 @@ describe('security-alerts.mapper', () => {
         status: 'contains',
         category: 'contains',
         type: 'contains',
+        detectionMode: 'contains',
         dedupRule: 'contains',
         title: 'contains',
         occurrences: 'contains',
@@ -135,6 +139,7 @@ describe('security-alerts.mapper', () => {
         status: [],
         category: [],
         type: [],
+        detectionMode: [],
         dedupRule: [],
         title: [],
         occurrences: [],
@@ -157,6 +162,7 @@ describe('security-alerts.mapper', () => {
         severity: '',
         category: '',
         type: '',
+        detectionMode: '',
         title: 'beta',
         occurredAt: '',
         entityRef: '',
@@ -170,6 +176,7 @@ describe('security-alerts.mapper', () => {
         severity: 'contains',
         category: 'contains',
         type: 'contains',
+        detectionMode: 'contains',
         title: 'contains',
         occurredAt: 'contains',
         entityRef: 'contains',
@@ -183,6 +190,7 @@ describe('security-alerts.mapper', () => {
         severity: [],
         category: [],
         type: [],
+        detectionMode: [],
         title: [],
         occurredAt: [],
         entityRef: [],

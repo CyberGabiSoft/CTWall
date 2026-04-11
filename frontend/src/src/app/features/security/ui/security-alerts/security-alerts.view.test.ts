@@ -59,6 +59,7 @@ describe('security-alerts.view', () => {
         status: 'contains',
         category: 'contains',
         type: 'contains',
+        detectionMode: 'contains',
         dedupRule: 'contains',
         title: 'contains',
         occurrences: 'contains',
@@ -72,6 +73,7 @@ describe('security-alerts.view', () => {
         status: '',
         category: '',
         type: '',
+        detectionMode: '',
         dedupRule: '',
         title: '',
         occurrences: '',
@@ -85,6 +87,7 @@ describe('security-alerts.view', () => {
         status: [],
         category: [],
         type: [],
+        detectionMode: [],
         dedupRule: [],
         title: [],
         occurrences: [],
@@ -96,7 +99,7 @@ describe('security-alerts.view', () => {
       options
     );
     expect(fields.find((field) => field.key === 'severity')?.label).toBe('Severity');
-    expect(fields).toHaveLength(11);
+    expect(fields).toHaveLength(12);
   });
 
   it('builds occurrence options and advanced fields', () => {
@@ -107,6 +110,7 @@ describe('security-alerts.view', () => {
         severity: 'contains',
         category: 'contains',
         type: 'contains',
+        detectionMode: 'contains',
         title: 'contains',
         occurredAt: 'contains',
         entityRef: 'contains',
@@ -120,6 +124,7 @@ describe('security-alerts.view', () => {
         severity: '',
         category: '',
         type: '',
+        detectionMode: '',
         title: '',
         occurredAt: '',
         entityRef: '',
@@ -133,6 +138,7 @@ describe('security-alerts.view', () => {
         severity: [],
         category: [],
         type: [],
+        detectionMode: [],
         title: [],
         occurredAt: [],
         entityRef: [],
@@ -145,7 +151,7 @@ describe('security-alerts.view', () => {
       options
     );
     expect(fields.find((field) => field.key === 'groupId')?.label).toBe('Group ID');
-    expect(fields).toHaveLength(11);
+    expect(fields).toHaveLength(12);
   });
 
   it('returns safe table value for unknown keys', () => {

@@ -61,7 +61,7 @@ export class SecurityApi {
     return extractItems<ScanComponentResult>(payload);
   }
 
-  async listSyncHistory(sourceId: string, pageSize = 50): Promise<SyncHistoryEntry[]> {
+  async listSyncHistory(sourceId: string, pageSize = 200): Promise<SyncHistoryEntry[]> {
     const encoded = encodeURIComponent(sourceId);
     return this.fetchAll<SyncHistoryEntry>(`/explorer/sources/${encoded}/sync-history`, new HttpParams(), pageSize);
   }
@@ -76,7 +76,7 @@ export class SecurityApi {
     );
   }
 
-  async listSourceResultsRecomputeHistory(sourceId: string, pageSize = 50): Promise<RecomputeHistoryEntry[]> {
+  async listSourceResultsRecomputeHistory(sourceId: string, pageSize = 200): Promise<RecomputeHistoryEntry[]> {
     const encoded = encodeURIComponent(sourceId);
     return this.fetchAll<RecomputeHistoryEntry>(
       `/explorer/sources/${encoded}/results/recompute-history`,
@@ -85,7 +85,7 @@ export class SecurityApi {
     );
   }
 
-  async listSummaryRecomputeHistory(pageSize = 50): Promise<RecomputeHistoryEntry[]> {
+  async listSummaryRecomputeHistory(pageSize = 200): Promise<RecomputeHistoryEntry[]> {
     return this.fetchAll<RecomputeHistoryEntry>(
       '/component-analysis/explorer/summary/recompute-history',
       new HttpParams(),

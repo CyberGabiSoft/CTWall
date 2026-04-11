@@ -125,15 +125,18 @@ Scope:
 
 1. `Alert groups`
 - deduplicated alert groups,
+- includes `Detection mode` column (`purl_version_smart` / `purl_contains_prefix`),
 - acknowledge/close actions,
 - `Show in Explorer` for malware groups.
 
 2. `All alerts`
-- append-only occurrence stream.
+- append-only occurrence stream,
+- includes `Detection mode` in table and `Match type` in expanded details.
 
 3. `Detection modes`
 - `purl_version_smart` and `purl_contains_prefix` can be enabled independently,
 - each mode has its own alert severity (`ERROR` / `WARNING` / `INFO`).
+- alerts table default fetch is not limited to `ERROR` anymore (WARN/INFO are visible by default).
 
 4. `Dedup rules`
 - deduplication policy configuration.

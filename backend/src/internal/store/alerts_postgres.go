@@ -701,6 +701,7 @@ INSERT INTO alert_groups (
 VALUES ($1, $2, $3, $4, 'OPEN', $5, $6, $7, 1, $8, $8, $8, $8)
 ON CONFLICT (project_id, group_key) DO UPDATE
 SET occurrences = alert_groups.occurrences + 1,
+    severity = EXCLUDED.severity,
     last_seen_at = EXCLUDED.last_seen_at,
     updated_at = EXCLUDED.updated_at,
     -- Re-open when new occurrence arrives after ack/close.

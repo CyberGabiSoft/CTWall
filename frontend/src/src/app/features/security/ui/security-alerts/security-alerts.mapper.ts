@@ -3,11 +3,14 @@ import { AlertGroup, AlertOccurrence } from '../../data-access/alerts.types';
 import { GroupColumnKey, OccurrenceColumnKey } from './security-alerts.tables';
 import { SortDirection } from './security-alerts.table-state';
 import {
+  detailsStringValue,
   formatDate,
+  groupDetectionMode,
   groupDedupRule,
   groupDedupeKeys,
   groupKeyPart,
   matchesAdvancedFilter,
+  occurrenceDetectionMode,
 } from './security-alerts.utils';
 
 export interface ExpandedDetailItem {
@@ -43,6 +46,8 @@ export function alertGroupValue(row: AlertGroup, key: GroupColumnKey): string {
       return row.category ?? '-';
     case 'type':
       return row.type ?? '-';
+    case 'detectionMode':
+      return groupDetectionMode(row.groupKey);
     case 'dedupRule':
       return groupDedupRule(row.groupKey);
     case 'title':
@@ -70,6 +75,8 @@ export function alertOccurrenceValue(row: AlertOccurrence, key: OccurrenceColumn
       return row.category ?? '-';
     case 'type':
       return row.type ?? '-';
+    case 'detectionMode':
+      return occurrenceDetectionMode(row.details);
     case 'title':
       return row.title ?? '-';
     case 'occurredAt':
@@ -146,6 +153,7 @@ export function alertGroupExpandedItems(row: AlertGroup): ExpandedDetailItem[] {
     { label: 'Severity', value: row.severity ?? '-' },
     { label: 'Category', value: row.category ?? '-' },
     { label: 'Type', value: row.type ?? '-', mono: true },
+    { label: 'Detection mode', value: groupDetectionMode(row.groupKey), mono: true },
     { label: 'Malware PURL', value: malwarePurl || '-', mono: true },
     { label: 'First seen', value: formatDate(row.firstSeenAt) },
     { label: 'Last seen', value: formatDate(row.lastSeenAt) },
@@ -164,6 +172,8 @@ export function alertOccurrenceExpandedItems(row: AlertOccurrence): ExpandedDeta
     { label: 'Severity', value: row.severity ?? '-' },
     { label: 'Category', value: row.category ?? '-' },
     { label: 'Type', value: row.type ?? '-', mono: true },
+    { label: 'Detection mode', value: occurrenceDetectionMode(row.details), mono: true },
+    { label: 'Match type', value: detailsStringValue(row.details, 'matchType') || '-', mono: true },
     { label: 'Title', value: row.title ?? '-' },
     { label: 'Occurred', value: formatDate(row.occurredAt) },
     { label: 'Entity', value: row.entityRef ?? '-', mono: true },
@@ -190,6 +200,7 @@ export function applyGroupFiltersAndSort(
     if (!matchesAdvancedFilter(alertGroupValue(row, 'status'), state.modes.status, state.filters.status, state.selected.status)) return false;
     if (!matchesAdvancedFilter(alertGroupValue(row, 'category'), state.modes.category, state.filters.category, state.selected.category)) return false;
     if (!matchesAdvancedFilter(alertGroupValue(row, 'type'), state.modes.type, state.filters.type, state.selected.type)) return false;
+    if (!matchesAdvancedFilter(alertGroupValue(row, 'detectionMode'), state.modes.detectionMode, state.filters.detectionMode, state.selected.detectionMode)) return false;
     if (!matchesAdvancedFilter(alertGroupValue(row, 'dedupRule'), state.modes.dedupRule, state.filters.dedupRule, state.selected.dedupRule)) return false;
     if (!matchesAdvancedFilter(alertGroupValue(row, 'title'), state.modes.title, state.filters.title, state.selected.title)) return false;
     if (!matchesAdvancedFilter(alertGroupValue(row, 'occurrences'), state.modes.occurrences, state.filters.occurrences, state.selected.occurrences)) return false;
@@ -210,6 +221,7 @@ export function applyOccurrenceFiltersAndSort(
     if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'severity'), state.modes.severity, state.filters.severity, state.selected.severity)) return false;
     if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'category'), state.modes.category, state.filters.category, state.selected.category)) return false;
     if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'type'), state.modes.type, state.filters.type, state.selected.type)) return false;
+    if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'detectionMode'), state.modes.detectionMode, state.filters.detectionMode, state.selected.detectionMode)) return false;
     if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'title'), state.modes.title, state.filters.title, state.selected.title)) return false;
     if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'occurredAt'), state.modes.occurredAt, state.filters.occurredAt, state.selected.occurredAt)) return false;
     if (!matchesAdvancedFilter(alertOccurrenceValue(row, 'entityRef'), state.modes.entityRef, state.filters.entityRef, state.selected.entityRef)) return false;
