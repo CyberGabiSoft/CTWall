@@ -111,15 +111,14 @@ Run backend via Docker Compose (recommended):
 
 ```bash
 mkdir -p "$(pwd)/deploy/docker/backend-config"
-chmod 0777 "$(pwd)/deploy/docker/backend-config"
-chmod 0666 "$(pwd)/deploy/docker/backend-config/config.yaml"
-chmod 0666 "$(pwd)/deploy/docker/backend-config/alertmanager.yml"
+chmod 0644 "$(pwd)/deploy/docker/backend-config/config.yaml"
+chmod 0644 "$(pwd)/deploy/docker/backend-config/alertmanager.yml"
 
 # If using local build:
 #   set CTWALL_BACKEND_IMAGE=ctwall-backend:local in ./deploy/docker/.env
 
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d \
-  ctwall-postgres ctwall-alertmanager ctwall-backend
+  ctwall-postgres ctwall-config-bootstrap ctwall-alertmanager ctwall-backend
 
 docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env logs -f ctwall-backend
 ```
@@ -132,6 +131,13 @@ Notes:
   - `CTWALL_CONFIG_TEMPLATE_PATH=/app/config.template.yaml`
   - `ALERTMANAGER_CONFIG_FILE_PATH=/app/config/alertmanager.yml`
 - Runtime config file should stay non-secret and contain only operational settings.
+- Docker Compose uses a dedicated writable named volume for `/app/config`:
+  - `ctwall-config-bootstrap` seeds `config.yaml` and `alertmanager.yml` from `deploy/docker/backend-config`,
+  - backend writes runtime files atomically (for example `alertmanager.yml.tmp` -> `alertmanager.yml`) inside that volume,
+  - seeded files are mode `0644`; config volume root is `0755`.
+- After editing seed files in `deploy/docker/backend-config`, re-run bootstrap and restart runtime services:
+  - `docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env up -d ctwall-config-bootstrap`
+  - `docker compose -f ./docker-compose.yml --env-file ./deploy/docker/.env restart ctwall-alertmanager ctwall-backend`
 - Backend writes resolved/generated runtime secrets to `CTWALL_SECRETS_PATH`.
 - Runtime data path defaults to `/app/data/blob_storage` via bundled config.
 - In Docker Compose mode backend `DB_URL` is assembled from `.env` values:

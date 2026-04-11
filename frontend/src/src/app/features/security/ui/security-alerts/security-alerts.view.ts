@@ -1,43 +1,95 @@
 import { AdvancedFilterField, AdvancedFilterMode } from '../../../../shared/ui/advanced-filter-panel/advanced-filter-panel.component';
 import { AlertGroup, AlertOccurrence } from '../../data-access/alerts.types';
-import { alertGroupValue, alertOccurrenceValue } from './security-alerts.mapper';
+import {
+  alertGroupExpandedItems,
+  alertGroupValue,
+  alertOccurrenceExpandedItems,
+  alertOccurrenceValue,
+} from './security-alerts.mapper';
 import { GroupColumnKey, GROUP_COLUMN_KEYS, OCCURRENCE_COLUMN_KEYS, OccurrenceColumnKey } from './security-alerts.tables';
 import { isKnownKey } from './security-alerts.utils';
 import { sortedOptions } from './security-alerts.utils';
+
+const ALERT_GROUP_STATUS_OPTIONS = ['OPEN', 'CLOSED'] as const;
+const DETAIL_COLUMN_PREFIX = '__detail__:';
+const NORMALIZED_KEY_PATTERN = /[^a-z0-9]+/g;
 
 type ModeRecord<TKey extends string> = Record<TKey, AdvancedFilterMode>;
 type ValueRecord<TKey extends string> = Record<TKey, string>;
 type MultiRecord<TKey extends string> = Record<TKey, string[]>;
 type OptionsRecord<TKey extends string> = Record<TKey, string[]>;
 
-export function groupValueForTable(row: AlertGroup, key: string): string {
-  if (!isKnownKey(key, GROUP_COLUMN_KEYS)) {
-    return '-';
+function normalizeDetailColumnKey(raw: string): string {
+  const normalized = (raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(NORMALIZED_KEY_PATTERN, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!normalized) {
+    return '';
   }
-  return alertGroupValue(row, key as GroupColumnKey);
+  return `${DETAIL_COLUMN_PREFIX}${normalized}`;
+}
+
+function detailValueByColumnKey(
+  columnKey: string,
+  items: ReadonlyArray<{ label: string; value: string }>
+): string | null {
+  if (!columnKey.startsWith(DETAIL_COLUMN_PREFIX)) {
+    return null;
+  }
+  for (const item of items) {
+    if (normalizeDetailColumnKey(item.label) !== columnKey) {
+      continue;
+    }
+    const value = (item.value ?? '').trim();
+    return value.length > 0 ? item.value : '-';
+  }
+  return '-';
+}
+
+export function groupValueForTable(
+  row: AlertGroup,
+  key: string,
+  groupDetectionDataById?: ReadonlyMap<string, string>
+): string {
+  if (isKnownKey(key, GROUP_COLUMN_KEYS)) {
+    return alertGroupValue(row, key as GroupColumnKey, { groupDetectionDataById });
+  }
+  return detailValueByColumnKey(
+    key,
+    alertGroupExpandedItems(row, { groupDetectionDataById })
+  ) ?? '-';
 }
 
 export function occurrenceValueForTable(row: AlertOccurrence, key: string): string {
-  if (!isKnownKey(key, OCCURRENCE_COLUMN_KEYS)) {
-    return '-';
+  if (isKnownKey(key, OCCURRENCE_COLUMN_KEYS)) {
+    return alertOccurrenceValue(row, key as OccurrenceColumnKey);
   }
-  return alertOccurrenceValue(row, key as OccurrenceColumnKey);
+  return detailValueByColumnKey(key, alertOccurrenceExpandedItems(row)) ?? '-';
 }
 
-export function buildGroupFilterOptions(rows: AlertGroup[]): OptionsRecord<GroupColumnKey> {
+export function buildGroupFilterOptions(
+  rows: AlertGroup[],
+  groupDetectionDataById?: ReadonlyMap<string, string>
+): OptionsRecord<GroupColumnKey> {
   return {
-    severity: sortedOptions(rows.map((row) => alertGroupValue(row, 'severity'))),
-    status: sortedOptions(rows.map((row) => alertGroupValue(row, 'status'))),
-    category: sortedOptions(rows.map((row) => alertGroupValue(row, 'category'))),
-    type: sortedOptions(rows.map((row) => alertGroupValue(row, 'type'))),
-    detectionMode: sortedOptions(rows.map((row) => alertGroupValue(row, 'detectionMode'))),
-    dedupRule: sortedOptions(rows.map((row) => alertGroupValue(row, 'dedupRule'))),
-    title: sortedOptions(rows.map((row) => alertGroupValue(row, 'title'))),
-    occurrences: sortedOptions(rows.map((row) => alertGroupValue(row, 'occurrences'))),
-    firstSeenAt: sortedOptions(rows.map((row) => alertGroupValue(row, 'firstSeenAt'))),
-    lastSeenAt: sortedOptions(rows.map((row) => alertGroupValue(row, 'lastSeenAt'))),
-    entityRef: sortedOptions(rows.map((row) => alertGroupValue(row, 'entityRef'))),
-    id: sortedOptions(rows.map((row) => alertGroupValue(row, 'id'))),
+    severity: sortedOptions(rows.map((row) => alertGroupValue(row, 'severity', { groupDetectionDataById }))),
+    status: sortedOptions([
+      ...rows.map((row) => alertGroupValue(row, 'status', { groupDetectionDataById })),
+      ...ALERT_GROUP_STATUS_OPTIONS
+    ]),
+    category: sortedOptions(rows.map((row) => alertGroupValue(row, 'category', { groupDetectionDataById }))),
+    type: sortedOptions(rows.map((row) => alertGroupValue(row, 'type', { groupDetectionDataById }))),
+    detectionMode: sortedOptions(rows.map((row) => alertGroupValue(row, 'detectionMode', { groupDetectionDataById }))),
+    detectionData: sortedOptions(rows.map((row) => alertGroupValue(row, 'detectionData', { groupDetectionDataById }))),
+    dedupRule: sortedOptions(rows.map((row) => alertGroupValue(row, 'dedupRule', { groupDetectionDataById }))),
+    title: sortedOptions(rows.map((row) => alertGroupValue(row, 'title', { groupDetectionDataById }))),
+    occurrences: sortedOptions(rows.map((row) => alertGroupValue(row, 'occurrences', { groupDetectionDataById }))),
+    firstSeenAt: sortedOptions(rows.map((row) => alertGroupValue(row, 'firstSeenAt', { groupDetectionDataById }))),
+    lastSeenAt: sortedOptions(rows.map((row) => alertGroupValue(row, 'lastSeenAt', { groupDetectionDataById }))),
+    entityRef: sortedOptions(rows.map((row) => alertGroupValue(row, 'entityRef', { groupDetectionDataById }))),
+    id: sortedOptions(rows.map((row) => alertGroupValue(row, 'id', { groupDetectionDataById }))),
   };
 }
 
@@ -49,6 +101,7 @@ export function buildOccurrenceFilterOptions(
     category: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'category'))),
     type: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'type'))),
     detectionMode: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'detectionMode'))),
+    detectionData: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'detectionData'))),
     title: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'title'))),
     occurredAt: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'occurredAt'))),
     entityRef: sortedOptions(rows.map((row) => alertOccurrenceValue(row, 'entityRef'))),
@@ -72,6 +125,7 @@ export function buildGroupAdvancedFields(
     { key: 'category', label: 'Category', mode: mode.category, value: value.category, options: options.category, selected: selected.category },
     { key: 'type', label: 'Type', mode: mode.type, value: value.type, options: options.type, selected: selected.type },
     { key: 'detectionMode', label: 'Detection mode', mode: mode.detectionMode, value: value.detectionMode, options: options.detectionMode, selected: selected.detectionMode },
+    { key: 'detectionData', label: 'Detection data', mode: mode.detectionData, value: value.detectionData, options: options.detectionData, selected: selected.detectionData },
     { key: 'dedupRule', label: 'Dedup rule', mode: mode.dedupRule, value: value.dedupRule, options: options.dedupRule, selected: selected.dedupRule },
     { key: 'title', label: 'Title', mode: mode.title, value: value.title, options: options.title, selected: selected.title },
     {
@@ -100,6 +154,7 @@ export function buildOccurrenceAdvancedFields(
     { key: 'category', label: 'Category', mode: mode.category, value: value.category, options: options.category, selected: selected.category },
     { key: 'type', label: 'Type', mode: mode.type, value: value.type, options: options.type, selected: selected.type },
     { key: 'detectionMode', label: 'Detection mode', mode: mode.detectionMode, value: value.detectionMode, options: options.detectionMode, selected: selected.detectionMode },
+    { key: 'detectionData', label: 'Detection data', mode: mode.detectionData, value: value.detectionData, options: options.detectionData, selected: selected.detectionData },
     { key: 'title', label: 'Title', mode: mode.title, value: value.title, options: options.title, selected: selected.title },
     { key: 'occurredAt', label: 'Occurred', mode: mode.occurredAt, value: value.occurredAt, options: options.occurredAt, selected: selected.occurredAt },
     { key: 'entityRef', label: 'Entity', mode: mode.entityRef, value: value.entityRef, options: options.entityRef, selected: selected.entityRef },

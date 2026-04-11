@@ -283,7 +283,13 @@ SET status = 'CLOSED',
 WHERE ag.project_id = $1
   AND ag.type = 'malware.detected'
   AND ag.status = 'OPEN'
-  AND NOT EXISTS (
+  AND (
+    position('|detect_mode:' in ag.group_key) = 0
+    OR (
+      position('|detect_mode:purl_version_smart|' in ag.group_key) > 0
+      AND position('@' in split_part(ag.group_key, '|malware_purl:', 2)) = 0
+    )
+    OR NOT EXISTS (
     SELECT 1
     FROM test_revisions tr
     JOIN tests t ON t.id = tr.test_id
@@ -327,6 +333,7 @@ WHERE ag.project_id = $1
           AND position('|dedup_on:product|' in ag.group_key) = 0
         )
       )
+  )
   )
 RETURNING ag.id
 `, projectID, now)

@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,9 @@ func TestUpsertComponentAnalysisFinding_CreatesAlertForExistingMappingInActiveRe
 	}
 	if _, err := storeInstance.ComputeAndStoreTestRevisionFindingDiff(revision.ID); err != nil {
 		t.Fatalf("compute revision diff: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE test_revisions SET is_active = TRUE WHERE id = $1`, revision.ID); err != nil {
+		t.Fatalf("force revision active: %v", err)
 	}
 
 	malwarePURL := componentPURL
@@ -209,6 +213,33 @@ func TestAddRevision_CreatesMalwareAlertFromExistingMappingsWithoutQueueRun(t *t
 	}
 	if _, err := storeInstance.ComputeAndStoreTestRevisionFindingDiff(revision.ID); err != nil {
 		t.Fatalf("compute revision diff: %v", err)
+	}
+
+	manualGroupKey := fmt.Sprintf(
+		"project:%s|type:malware.detected|dedup_on:test|test_id:%s|detect_mode:purl_version_smart|malware_purl:%s",
+		product.ProjectID.String(),
+		testItem.ID.String(),
+		malwarePURL,
+	)
+	manualEntityRef := malwarePURL
+	if _, err := storeInstance.UpsertAlertGroupAndInsertOccurrence(
+		store.AlertGroupUpsert{
+			ProjectID: product.ProjectID,
+			Severity:  eventmeta.SeverityError,
+			Category:  eventmeta.CategoryMalware,
+			Type:      "malware.detected",
+			GroupKey:  manualGroupKey,
+			Title:     "Malware detected in active revision",
+			EntityRef: &manualEntityRef,
+		},
+		store.AlertOccurrenceInsert{
+			ProjectID: product.ProjectID,
+			TestID:    &testItem.ID,
+			EntityRef: &componentPURL,
+			Details:   json.RawMessage(`{"malwarePurl":"pkg:pypi/tsplitlgtb","componentPurl":"pkg:pypi/tsplitlgtb","detectMode":"PURL_VERSION_SMART","matchType":"EXACT"}`),
+		},
+	); err != nil {
+		t.Fatalf("insert manual open group: %v", err)
 	}
 
 	groups, total, err := storeInstance.ListAlertGroups(store.AlertGroupsQuery{
@@ -1106,23 +1137,8 @@ func TestListAlertGroups_AutoClosesOpenMalwareGroupWithZeroActiveOccurrences(t *
 		t.Fatalf("ensure test: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb"
+	componentPURL := "pkg:pypi/tsplitlgtb@1.0.0"
 	malwarePURL := componentPURL
-	resultID := uuid.New()
-	if _, err := db.Exec(
-		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
-		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
-		resultID, malwarePURL,
-	); err != nil {
-		t.Fatalf("insert analysis result: %v", err)
-	}
-	if _, err := db.Exec(
-		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
-		 VALUES ($1, $2, $3, 'EXACT', NOW(), NOW())`,
-		componentPURL, malwarePURL, resultID,
-	); err != nil {
-		t.Fatalf("insert finding mapping: %v", err)
-	}
 
 	sbomSHA := strings.Repeat("f", 64)
 	if _, err := storeInstance.StoreSbom(sbomSHA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
@@ -1147,6 +1163,60 @@ func TestListAlertGroups_AutoClosesOpenMalwareGroupWithZeroActiveOccurrences(t *
 	if _, err := storeInstance.ComputeAndStoreTestRevisionFindingDiff(revision.ID); err != nil {
 		t.Fatalf("compute revision diff: %v", err)
 	}
+	if err := db.QueryRow(`SELECT purl FROM components WHERE revision_id = $1 LIMIT 1`, revision.ID).Scan(&componentPURL); err != nil {
+		t.Fatalf("load stored component purl: %v", err)
+	}
+	malwarePURL = componentPURL
+	resultID := uuid.New()
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
+		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
+		resultID, malwarePURL,
+	); err != nil {
+		t.Fatalf("insert analysis result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'EXACT', NOW(), NOW())`,
+		componentPURL, malwarePURL, resultID,
+	); err != nil {
+		t.Fatalf("insert finding mapping: %v", err)
+	}
+
+	manualGroupKey := fmt.Sprintf(
+		"project:%s|type:malware.detected|dedup_on:test|test_id:%s|detect_mode:purl_version_smart|malware_purl:%s",
+		product.ProjectID.String(),
+		testItem.ID.String(),
+		malwarePURL,
+	)
+	manualEntityRef := malwarePURL
+	if _, err := storeInstance.UpsertAlertGroupAndInsertOccurrence(
+		store.AlertGroupUpsert{
+			ProjectID: product.ProjectID,
+			Severity:  eventmeta.SeverityError,
+			Category:  eventmeta.CategoryMalware,
+			Type:      "malware.detected",
+			GroupKey:  manualGroupKey,
+			Title:     "Malware detected in active revision",
+			EntityRef: &manualEntityRef,
+		},
+		store.AlertOccurrenceInsert{
+			ProjectID: product.ProjectID,
+			TestID:    &testItem.ID,
+			EntityRef: &componentPURL,
+			Details: func() json.RawMessage {
+				payload, _ := json.Marshal(map[string]any{
+					"malwarePurl":   malwarePURL,
+					"componentPurl": componentPURL,
+					"detectMode":    "PURL_VERSION_SMART",
+					"matchType":     "EXACT",
+				})
+				return payload
+			}(),
+		},
+	); err != nil {
+		t.Fatalf("insert manual open group: %v", err)
+	}
 
 	groups, total, err := storeInstance.ListAlertGroups(store.AlertGroupsQuery{
 		ProjectID: product.ProjectID,
@@ -1158,8 +1228,11 @@ func TestListAlertGroups_AutoClosesOpenMalwareGroupWithZeroActiveOccurrences(t *
 	if err != nil {
 		t.Fatalf("list open groups before triage: %v", err)
 	}
-	if total != 1 || len(groups) != 1 || groups[0].Status != "OPEN" {
-		t.Fatalf("expected one OPEN group before triage, total=%d len=%d status=%s", total, len(groups), groups[0].Status)
+	if total != 1 || len(groups) != 1 {
+		t.Fatalf("expected one OPEN group before triage, total=%d len=%d", total, len(groups))
+	}
+	if groups[0].Status != "OPEN" {
+		t.Fatalf("expected OPEN group before triage, got %s", groups[0].Status)
 	}
 
 	actor, err := storeInstance.CreateUser("alerts-autoclose@example.com", "hash", "ADMIN", "USER", "Auto Close")
@@ -1197,6 +1270,116 @@ func TestListAlertGroups_AutoClosesOpenMalwareGroupWithZeroActiveOccurrences(t *
 	}
 	if groups[0].Occurrences != 0 {
 		t.Fatalf("expected zero active occurrences after fixed triage, got %d", groups[0].Occurrences)
+	}
+}
+
+func TestListAlertGroups_AutoClosesLegacyOpenMalwareGroupWithoutDetectMode(t *testing.T) {
+	storeInstance, db := tests.NewPostgresTestStore(t)
+
+	product, err := storeInstance.CreateProduct("alerts-legacy-mode-product", "")
+	if err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	scope, err := storeInstance.CreateScope(product.ID, "alerts-legacy-mode-scope", "")
+	if err != nil {
+		t.Fatalf("create scope: %v", err)
+	}
+	testItem, _, err := storeInstance.EnsureTest(scope.ID, "alerts-legacy-mode-test", "cyclonedx", "1.6")
+	if err != nil {
+		t.Fatalf("ensure test: %v", err)
+	}
+
+	componentPURL := "pkg:pypi/databaseroboats:0.0.3"
+	malwarePURL := "pkg:pypi/databaseroboats@0.0.3"
+	resultID := uuid.New()
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
+		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
+		resultID, malwarePURL,
+	); err != nil {
+		t.Fatalf("insert analysis result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'EXACT', NOW(), NOW())`,
+		componentPURL, malwarePURL, resultID,
+	); err != nil {
+		t.Fatalf("insert finding mapping: %v", err)
+	}
+
+	sbomSHA := strings.Repeat("e", 64)
+	if _, err := storeInstance.StoreSbom(sbomSHA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
+		t.Fatalf("store sbom: %v", err)
+	}
+	if _, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
+		SbomSha256:   sbomSHA,
+		SbomProducer: "trivy",
+		Components: []store.ComponentInput{
+			{
+				PURL:     componentPURL,
+				PkgName:  "databaseroboats",
+				Version:  "0.0.3",
+				PkgType:  "pypi",
+				SbomType: "library",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("add revision: %v", err)
+	}
+
+	legacyGroupKey := fmt.Sprintf(
+		"project:%s|type:malware.detected|dedup_on:test|test_id:%s|malware_purl:%s",
+		product.ProjectID.String(),
+		testItem.ID.String(),
+		malwarePURL,
+	)
+	legacyEntityRef := malwarePURL
+	legacyGroup, err := storeInstance.UpsertAlertGroupAndInsertOccurrence(
+		store.AlertGroupUpsert{
+			ProjectID: product.ProjectID,
+			Severity:  eventmeta.SeverityError,
+			Category:  eventmeta.CategoryMalware,
+			Type:      "malware.detected",
+			GroupKey:  legacyGroupKey,
+			Title:     "Legacy malware group without detect mode",
+			EntityRef: &legacyEntityRef,
+		},
+		store.AlertOccurrenceInsert{
+			ProjectID: product.ProjectID,
+			TestID:    &testItem.ID,
+			EntityRef: &componentPURL,
+			Details:   json.RawMessage(`{"malwarePurl":"pkg:pypi/databaseroboats@0.0.3"}`),
+		},
+	)
+	if err != nil {
+		t.Fatalf("insert legacy alert group: %v", err)
+	}
+	if legacyGroup.Status != "OPEN" {
+		t.Fatalf("expected inserted legacy group to be OPEN, got %s", legacyGroup.Status)
+	}
+
+	groups, _, err := storeInstance.ListAlertGroups(store.AlertGroupsQuery{
+		ProjectID: product.ProjectID,
+		Types:     []string{"malware.detected"},
+		Status:    []store.AlertGroupStatus{store.AlertGroupStatusOpen},
+		Limit:     50,
+		Offset:    0,
+	})
+	if err != nil {
+		t.Fatalf("list alert groups: %v", err)
+	}
+	for _, group := range groups {
+		if group.ID == legacyGroup.ID {
+			t.Fatalf("legacy malware group should be auto-closed and not returned in OPEN list")
+		}
+	}
+
+	updated, err := storeInstance.GetAlertGroup(product.ProjectID, legacyGroup.ID)
+	if err != nil {
+		t.Fatalf("get legacy group after list: %v", err)
+	}
+	if updated.Status != "CLOSED" {
+		t.Fatalf("expected legacy group to be CLOSED after list reconciliation, got %s", updated.Status)
 	}
 }
 

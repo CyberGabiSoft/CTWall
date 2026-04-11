@@ -43,6 +43,7 @@ export type ComponentColumnKey =
   | 'publisher'
   | 'supplier'
   | 'malwareVerdict'
+  | 'detectionData'
   | 'malwareTriageStatus'
   | 'malwareScannedAt'
   | 'malwareValidUntil';
@@ -58,6 +59,7 @@ export type ComponentColumnFilterKey =
   | 'publisher'
   | 'supplier'
   | 'malwareVerdict'
+  | 'detectionData'
   | 'malwareTriageStatus'
   | 'malwareScannedAt'
   | 'malwareValidUntil';
@@ -171,6 +173,13 @@ export const COMPONENT_COLUMNS: ColumnDefinition<ComponentColumnKey, ComponentCo
     className: 'col-malware'
   },
   {
+    key: 'detectionData',
+    label: 'Detection data',
+    sortKey: 'detectionData',
+    filterKey: 'detectionData',
+    className: 'mono col-malware-detection'
+  },
+  {
     key: 'malwareTriageStatus',
     label: 'Malware triage',
     sortKey: 'malwareTriageStatus',
@@ -200,6 +209,7 @@ export const COMPONENT_DEFAULT_COLUMNS: ComponentColumnKey[] = [
   'version',
   'pkgNamespace',
   'malwareVerdict',
+  'detectionData',
   'malwareTriageStatus',
   'malwareScannedAt',
   'malwareValidUntil'

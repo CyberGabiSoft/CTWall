@@ -203,6 +203,9 @@
           <p>
             @if (selectedSource()) {
               OSV findings for {{ selectedSource()?.name }}.
+              @if (findingsStatus() === 'loaded' && findingsLoadMode() === 'preview') {
+                Showing first 10 findings.
+              }
             } @else {
               Select a source to see findings.
             }
@@ -210,6 +213,11 @@
         </div>
         @if (selectedSource()) {
           <div class="findings-actions">
+            @if (canLoadAllFindings()) {
+              <button mat-stroked-button type="button" (click)="loadAllFindings()">
+                Load all findings
+              </button>
+            }
             <button mat-stroked-button type="button" (click)="refreshSelectedFindings()">
               Refresh
             </button>
@@ -228,7 +236,7 @@
       } @else if (findingsStatus() === 'idle') {
         <div class="ctw-card-state">
           <button mat-stroked-button type="button" (click)="loadFindings(selectedSourceId()!)">
-            Load findings
+            Load findings (10)
           </button>
         </div>
       } @else {

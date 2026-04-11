@@ -73,21 +73,21 @@
           class="column-chip-grid"
           cdkDropList
           cdkDropListOrientation="horizontal"
-          [cdkDropListData]="columnOrder()"
-          (cdkDropListDropped)="dropColumn.emit($event)"
+          [cdkDropListData]="tableOptionColumnKeys()"
+          (cdkDropListDropped)="onDropPanelColumn($event)"
         >
-          @for (column of columnOrder(); track column) {
+          @for (column of tableOptionColumnKeys(); track column) {
             <mat-chip-row
               class="column-chip"
               cdkDrag
-              [removable]="!lockedColumns().includes(column) && columnOrder().length > 1"
+              [removable]="column.startsWith('__detail__:') || (!lockedColumns().includes(column) && columnOrder().length > 1)"
               (removed)="removeColumnFromPanel(column)"
             >
-              <span class="chip-label">{{ columnLabel(column) }}</span>
+              <span class="chip-label">{{ column.startsWith('__detail__:') ? detailColumnLabel(column) : columnLabel(column) }}</span>
               <span class="chip-drag" cdkDragHandle>
                 <lucide-icon [img]="GripVertical" aria-hidden="true"></lucide-icon>
               </span>
-              @if (!lockedColumns().includes(column) && columnOrder().length > 1) {
+              @if (column.startsWith('__detail__:') || (!lockedColumns().includes(column) && columnOrder().length > 1)) {
                 <button matChipRemove aria-label="Remove column">
                   <lucide-icon [img]="X" aria-hidden="true"></lucide-icon>
                 </button>
@@ -95,22 +95,6 @@
             </mat-chip-row>
           }
         </mat-chip-grid>
-        @if (selectedDetailColumns().length > 0) {
-          <div class="table-options-detail-columns">
-            <strong>Detail columns</strong>
-            <span>Added from expanded row key-value details.</span>
-          </div>
-          <mat-chip-grid class="column-chip-grid column-chip-grid--detail">
-            @for (column of selectedDetailColumns(); track column.key) {
-              <mat-chip-row class="column-chip" [removable]="true" (removed)="removeColumnFromPanel(column.key)">
-                <span class="chip-label">{{ detailColumnLabel(column.key) }}</span>
-                <button matChipRemove aria-label="Remove detail column">
-                  <lucide-icon [img]="X" aria-hidden="true"></lucide-icon>
-                </button>
-              </mat-chip-row>
-            }
-          </mat-chip-grid>
-        }
         <mat-form-field appearance="outline" class="column-add-field" subscriptSizing="dynamic">
           <mat-select
             placeholder="Add column"
@@ -238,17 +222,29 @@
             >
               <ng-container
                 [ngTemplateOutlet]="rowContentTemplate()"
-                [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+                [ngTemplateOutletContext]="{
+                  $implicit: row,
+                  columns: rowContentUsesOrderedColumns() ? orderedColumns() : orderedBaseColumns(),
+                  index: $index,
+                  colspan: colSpan()
+                }"
               ></ng-container>
-              @for (column of selectedDetailColumns(); track column.key) {
-                <td [class]="column.className ?? ''">{{ cellValue(row, column.key) }}</td>
+              @if (!rowContentUsesOrderedColumns()) {
+                @for (column of selectedDetailColumns(); track column.key) {
+                  <td [class]="column.className ?? ''">{{ cellValue(row, column.key) }}</td>
+                }
               }
               @if (showActionsColumn()) {
                 <td class="actions">
                   @if (actionsTemplate()) {
                     <ng-container
                       [ngTemplateOutlet]="actionsTemplate()"
-                      [ngTemplateOutletContext]="{ $implicit: row, columns: orderedBaseColumns(), index: $index, colspan: colSpan() }"
+                      [ngTemplateOutletContext]="{
+                        $implicit: row,
+                        columns: rowContentUsesOrderedColumns() ? orderedColumns() : orderedBaseColumns(),
+                        index: $index,
+                        colspan: colSpan()
+                      }"
                     ></ng-container>
                   }
                 </td>

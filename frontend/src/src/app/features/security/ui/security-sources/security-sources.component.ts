@@ -248,6 +248,14 @@ export class SecuritySourcesComponent implements OnInit {
     }
     return this.store.getFindingsStatus(id);
   });
+  readonly findingsLoadMode = computed(() => {
+    const id = this.selectedSourceId();
+    if (!id) {
+      return 'none';
+    }
+    return this.store.getFindingsLoadMode(id);
+  });
+  readonly canLoadAllFindings = computed(() => this.findingsStatus() === 'loaded' && this.findingsLoadMode() === 'preview');
   readonly findingsTableStatus = computed(() => {
     const status = this.findingsStatus();
     return status === 'idle' ? 'loaded' : status;
@@ -748,10 +756,6 @@ export class SecuritySourcesComponent implements OnInit {
       if (sourceId) {
         untracked(() => {
           void this.store.refreshSyncHistory(sourceId);
-          const findingsStatus = this.store.getFindingsStatus(sourceId);
-          if (findingsStatus === 'loaded') {
-            void this.store.refreshFindings(sourceId, true);
-          }
         });
       }
     });
@@ -1027,7 +1031,15 @@ export class SecuritySourcesComponent implements OnInit {
 
   async loadFindings(sourceId: string): Promise<void> {
     this.selectedSourceId.set(sourceId);
-    await this.store.ensureFindings(sourceId);
+    await this.store.ensureFindings(sourceId, 'preview');
+  }
+
+  async loadAllFindings(): Promise<void> {
+    const sourceId = this.selectedSourceId();
+    if (!sourceId) {
+      return;
+    }
+    await this.store.ensureFindings(sourceId, 'all');
   }
 
   async refreshSelectedFindings(): Promise<void> {

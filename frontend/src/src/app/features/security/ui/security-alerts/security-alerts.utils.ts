@@ -1,5 +1,10 @@
 import { AdvancedFilterMode } from '../../../../shared/ui/advanced-filter-panel/advanced-filter-panel.component';
 import {
+  inferDetectionModeFromMatchType,
+  normalizeDetectionModeCode as normalizeDetectionModeCodeShared,
+  normalizeMatchTypeCode as normalizeMatchTypeCodeShared
+} from '../../../../shared/utils/malware-detection-data';
+import {
   AlertDedupRule,
   AlertDedupScope,
   AlertMinSeverity,
@@ -86,26 +91,7 @@ export function groupDedupRule(groupKey: string | null | undefined): string {
 }
 
 export function normalizeDetectionModeCode(value: string | null | undefined): string {
-  const normalized = (value ?? '').trim().toLowerCase();
-  if (normalized === 'purl_version_smart') {
-    return 'purl_version_smart';
-  }
-  if (normalized === 'purl_contains_prefix') {
-    return 'purl_contains_prefix';
-  }
-  if (normalized === 'purl-version-smart') {
-    return 'purl_version_smart';
-  }
-  if (normalized === 'purl-contains-prefix') {
-    return 'purl_contains_prefix';
-  }
-  if (normalized === 'purlversionsmart') {
-    return 'purl_version_smart';
-  }
-  if (normalized === 'purlcontainsprefix') {
-    return 'purl_contains_prefix';
-  }
-  return '';
+  return normalizeDetectionModeCodeShared(value);
 }
 
 export function groupDetectionMode(groupKey: string | null | undefined): string {
@@ -116,6 +102,102 @@ export function groupDetectionMode(groupKey: string | null | undefined): string 
 export function occurrenceDetectionMode(details: unknown): string {
   const mode = normalizeDetectionModeCode(detailsStringValue(details, 'detectMode'));
   return mode || '-';
+}
+
+export function normalizeMatchTypeCode(value: string | null | undefined): string {
+  return normalizeMatchTypeCodeShared(value);
+}
+
+export function formatDetectionData(
+  componentPurl: string | null | undefined,
+  malwarePurl: string | null | undefined,
+  matchType: string | null | undefined,
+  detectionMode: string | null | undefined
+): string {
+  const component = (componentPurl ?? '').trim();
+  const malware = (malwarePurl ?? '').trim();
+  if (!component && !malware) {
+    return '-';
+  }
+
+  const normalizedMode = normalizeDetectionModeCode(detectionMode);
+  const inferredMode = inferDetectionModeFromMatchType(matchType);
+  const effectiveMode = normalizedMode || inferredMode;
+
+  const componentParts = splitPurlBaseAndVersion(component);
+  const malwareParts = splitPurlBaseAndVersion(malware);
+  const componentBase = componentParts.base || component || '*';
+  const malwareBase = malwareParts.base || malware || '-';
+  const componentVersion = componentParts.version || '?';
+  const malwareVersion = malwareParts.version || '?';
+
+  const base = `${component || '*'} -> ${malware || '-'}`;
+  if (effectiveMode === 'purl_version_smart') {
+    return `${base} (base+version: ${componentBase}@${componentVersion} == ${malwareBase}@${malwareVersion})`;
+  }
+  if (effectiveMode === 'purl_contains_prefix') {
+    return `${base} (base: ${componentBase} == ${malwareBase})`;
+  }
+  return base;
+}
+
+function splitPurlBaseAndVersion(raw: string): { base: string; version: string } {
+  const value = (raw ?? '').trim();
+  if (!value) {
+    return { base: '', version: '' };
+  }
+  const fragmentFree = value.split('#', 2)[0];
+  const queryIndex = fragmentFree.indexOf('?');
+  const withoutQuery = queryIndex >= 0 ? fragmentFree.slice(0, queryIndex) : fragmentFree;
+  const lastSlash = withoutQuery.lastIndexOf('/');
+  let separatorIndex = withoutQuery.lastIndexOf('@');
+  let separatorLength = 1;
+
+  if (separatorIndex <= lastSlash) {
+    const colonIndex = withoutQuery.lastIndexOf(':');
+    if (colonIndex > lastSlash) {
+      separatorIndex = colonIndex;
+      separatorLength = 1;
+    }
+  }
+
+  if (separatorIndex <= lastSlash) {
+    return { base: withoutQuery, version: '' };
+  }
+
+  const base = withoutQuery.slice(0, separatorIndex).trim();
+  const encodedVersion = withoutQuery.slice(separatorIndex + separatorLength).trim();
+  if (!encodedVersion) {
+    return { base, version: '' };
+  }
+  try {
+    return { base, version: decodeURIComponent(encodedVersion) };
+  } catch {
+    return { base, version: encodedVersion };
+  }
+}
+
+export function groupDetectionData(
+  groupKey: string | null | undefined,
+  fallbackComponentPurl: string | null | undefined = ''
+): string {
+  const malwarePurl = groupKeyPart(groupKey, 'malware_purl');
+  if (!malwarePurl) {
+    return '-';
+  }
+  const componentPurl = (fallbackComponentPurl ?? '').trim() || '*';
+  return formatDetectionData(componentPurl, malwarePurl, '', groupKeyPart(groupKey, 'detect_mode'));
+}
+
+export function occurrenceDetectionData(
+  details: unknown,
+  fallbackComponentPurl: string | null | undefined
+): string {
+  const componentPurl = detailsStringValue(details, 'componentPurl') || (fallbackComponentPurl ?? '');
+  const malwarePurl = detailsStringValue(details, 'malwarePurl');
+  const matchType = detailsStringValue(details, 'matchType');
+  const detectMode = detailsStringValue(details, 'detectMode');
+  return formatDetectionData(componentPurl, malwarePurl, matchType, detectMode);
 }
 
 export function isKnownKey<T extends string>(value: string, keys: readonly T[]): value is T {

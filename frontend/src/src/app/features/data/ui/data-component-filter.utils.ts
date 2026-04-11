@@ -16,6 +16,7 @@ export interface DataComponentFilterState {
     publisher: string;
     supplier: string;
     malwareVerdict: string;
+    detectionData: string;
     malwareTriageStatus: string;
     malwareScannedAt: string;
     malwareValidUntil: string;
@@ -31,6 +32,7 @@ export interface DataComponentFilterState {
     publisher: FilterMode;
     supplier: FilterMode;
     malwareVerdict: FilterMode;
+    detectionData: FilterMode;
     malwareTriageStatus: FilterMode;
     malwareScannedAt: FilterMode;
     malwareValidUntil: FilterMode;
@@ -46,11 +48,13 @@ export interface DataComponentFilterState {
 }
 
 export type ComponentMalwareLookup = (componentPurl: string) => MalwareResultSummary | null;
+export type ComponentDetectionDataLookup = (componentPurl: string) => string;
 
 export function filterComponentRows(
   rows: ComponentSummary[],
   state: DataComponentFilterState,
-  malwareLookup: ComponentMalwareLookup
+  malwareLookup: ComponentMalwareLookup,
+  detectionDataLookup: ComponentDetectionDataLookup
 ): ComponentSummary[] {
   const { filters, modes, multi } = state;
 
@@ -122,11 +126,15 @@ export function filterComponentRows(
     }
     const malware = malwareLookup(row.purl ?? '');
     const malwareVerdict = malware?.verdict ?? '';
+    const detectionData = detectionDataLookup(row.purl ?? '');
     const malwareTriageStatus = row.malwareTriageStatus ?? '';
     const malwareScannedAt = malware?.scannedAt ?? '';
     const malwareValidUntil = malware?.validUntil ?? '';
 
     if (!matchesFilter(malwareVerdict, filters.malwareVerdict, modes.malwareVerdict)) {
+      return false;
+    }
+    if (!matchesFilter(detectionData, filters.detectionData, modes.detectionData)) {
       return false;
     }
     if (!matchesFilter(malwareTriageStatus, filters.malwareTriageStatus, modes.malwareTriageStatus)) {

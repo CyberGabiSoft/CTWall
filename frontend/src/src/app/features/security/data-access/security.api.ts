@@ -50,20 +50,26 @@ export class SecurityApi {
     );
   }
 
-  async listFindings(sourceId?: string, page = 1, pageSize = 200): Promise<ScanComponentResult[]> {
-    let params = new HttpParams()
-      .set('page', String(page))
-      .set('pageSize', String(pageSize));
+  async listFindings(
+    sourceId?: string,
+    options?: {
+      pageSize?: number;
+      maxItems?: number;
+    }
+  ): Promise<ScanComponentResult[]> {
+    let params = new HttpParams();
     if (sourceId) {
       params = params.set('sourceId', sourceId);
     }
-    const payload = await firstValueFrom(this.http.get<unknown>('/explorer/findings', { params }));
-    return extractItems<ScanComponentResult>(payload);
+    return this.fetchAll<ScanComponentResult>('/explorer/findings', params, {
+      pageSize: options?.pageSize ?? 200,
+      maxItems: options?.maxItems
+    });
   }
 
   async listSyncHistory(sourceId: string, pageSize = 200): Promise<SyncHistoryEntry[]> {
     const encoded = encodeURIComponent(sourceId);
-    return this.fetchAll<SyncHistoryEntry>(`/explorer/sources/${encoded}/sync-history`, new HttpParams(), pageSize);
+    return this.fetchAll<SyncHistoryEntry>(`/explorer/sources/${encoded}/sync-history`, new HttpParams(), { pageSize });
   }
 
   async listSyncErrors(sourceId: string, syncId: string, pageSize = 200): Promise<SyncHistoryEntry[]> {
@@ -72,7 +78,7 @@ export class SecurityApi {
     return this.fetchAll<SyncHistoryEntry>(
       `/explorer/sources/${source}/sync-history/${sync}/errors`,
       new HttpParams(),
-      pageSize
+      { pageSize }
     );
   }
 
@@ -81,7 +87,7 @@ export class SecurityApi {
     return this.fetchAll<RecomputeHistoryEntry>(
       `/explorer/sources/${encoded}/results/recompute-history`,
       new HttpParams(),
-      pageSize
+      { pageSize }
     );
   }
 
@@ -89,7 +95,7 @@ export class SecurityApi {
     return this.fetchAll<RecomputeHistoryEntry>(
       '/component-analysis/explorer/summary/recompute-history',
       new HttpParams(),
-      pageSize
+      { pageSize }
     );
   }
 
@@ -113,8 +119,16 @@ export class SecurityApi {
     );
   }
 
-  private async fetchAll<T>(url: string, params: HttpParams, pageSize = 200): Promise<T[]> {
-    const normalizedPageSize = Math.max(1, pageSize);
+  private async fetchAll<T>(
+    url: string,
+    params: HttpParams,
+    options?: {
+      pageSize?: number;
+      maxItems?: number;
+    }
+  ): Promise<T[]> {
+    const normalizedPageSize = Math.max(1, options?.pageSize ?? 200);
+    const maxItems = typeof options?.maxItems === 'number' && options.maxItems > 0 ? options.maxItems : null;
     const items: T[] = [];
     let page = 1;
 
@@ -126,6 +140,9 @@ export class SecurityApi {
       const payload = await firstValueFrom(this.http.get<unknown>(url, { params: pagedParams }));
       const batch = extractItems<T>(payload);
       items.push(...batch);
+      if (maxItems !== null && items.length >= maxItems) {
+        return items.slice(0, maxItems);
+      }
 
       if (batch.length < normalizedPageSize) {
         break;

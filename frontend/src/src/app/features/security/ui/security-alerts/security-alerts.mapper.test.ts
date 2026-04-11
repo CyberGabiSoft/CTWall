@@ -62,17 +62,36 @@ describe('security-alerts.mapper', () => {
     const occurrence = createOccurrence();
     expect(alertGroupValue(group, 'dedupRule')).toContain('TEST');
     expect(alertGroupValue(group, 'detectionMode')).toBe('purl_version_smart');
+    expect(alertGroupValue(group, 'detectionData')).toContain('pkg:npm/leftpad@1.0.0 -> pkg:npm/bad@1.2.3');
     expect(alertGroupValue(group, 'occurrences')).toBe('3');
     expect(alertOccurrenceValue(occurrence, 'testId')).toBe('test-1');
     expect(alertOccurrenceValue(occurrence, 'detectionMode')).toBe('purl_contains_prefix');
+    expect(alertOccurrenceValue(occurrence, 'detectionData')).toContain('pkg:npm/bad@1.2.3');
     expect(alertOccurrenceValue(occurrence, 'groupId')).toBe('group-1');
+  });
+
+  it('prefers occurrence-derived detection data for group rows when available', () => {
+    const group = createGroup();
+    const detectionByGroup = new Map<string, string>([
+      ['group-1', 'pkg:npm/leftpad@1.0.0 -> pkg:npm/bad@1.2.3 (base: pkg:npm/leftpad == pkg:npm/bad)']
+    ]);
+
+    expect(alertGroupValue(group, 'detectionData', { groupDetectionDataById: detectionByGroup })).toContain(
+      'base: pkg:npm/leftpad == pkg:npm/bad'
+    );
+    expect(
+      alertGroupExpandedItems(group, { groupDetectionDataById: detectionByGroup }).find(
+        (item) => item.label === 'Detection data'
+      )?.value
+    ).toContain('base: pkg:npm/leftpad == pkg:npm/bad');
   });
 
   it('maps severity/status classes', () => {
     expect(alertSeverityClass('ERROR')).toContain('error');
     expect(alertSeverityClass('WARN')).toContain('warn');
     expect(alertStatusClass('OPEN')).toContain('open');
-    expect(alertStatusClass('ACKNOWLEDGED')).toContain('ack');
+    expect(alertStatusClass('ACKNOWLEDGED')).toContain('closed');
+    expect(alertGroupValue(createGroup({ status: 'ACKNOWLEDGED' }), 'status')).toBe('CLOSED');
   });
 
   it('detects malware rows and action tooltips', () => {
@@ -112,6 +131,7 @@ describe('security-alerts.mapper', () => {
         category: '',
         type: '',
         detectionMode: '',
+        detectionData: '',
         dedupRule: '',
         title: '',
         occurrences: '',
@@ -126,6 +146,7 @@ describe('security-alerts.mapper', () => {
         category: 'contains',
         type: 'contains',
         detectionMode: 'contains',
+        detectionData: 'contains',
         dedupRule: 'contains',
         title: 'contains',
         occurrences: 'contains',
@@ -140,6 +161,7 @@ describe('security-alerts.mapper', () => {
         category: [],
         type: [],
         detectionMode: [],
+        detectionData: [],
         dedupRule: [],
         title: [],
         occurrences: [],
@@ -163,6 +185,7 @@ describe('security-alerts.mapper', () => {
         category: '',
         type: '',
         detectionMode: '',
+        detectionData: '',
         title: 'beta',
         occurredAt: '',
         entityRef: '',
@@ -177,6 +200,7 @@ describe('security-alerts.mapper', () => {
         category: 'contains',
         type: 'contains',
         detectionMode: 'contains',
+        detectionData: 'contains',
         title: 'contains',
         occurredAt: 'contains',
         entityRef: 'contains',
@@ -191,6 +215,7 @@ describe('security-alerts.mapper', () => {
         category: [],
         type: [],
         detectionMode: [],
+        detectionData: [],
         title: [],
         occurredAt: [],
         entityRef: [],

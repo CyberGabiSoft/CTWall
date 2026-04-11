@@ -13,6 +13,9 @@ import { mapGetValue, mapSetValue } from '../../../shared/utils/map-utils';
 import { LoadState } from '../../../shared/types/load-state';
 
 export type { LoadState } from '../../../shared/types/load-state';
+export type FindingsLoadMode = 'preview' | 'all';
+
+const findingsPreviewLimit = 10;
 
 @Injectable({ providedIn: 'root' })
 export class SecurityStore {
@@ -21,6 +24,7 @@ export class SecurityStore {
 
   private readonly findingsState = signal<Map<string, ScanComponentResult[]>>(new Map());
   private readonly findingsStatus = signal<Map<string, LoadState>>(new Map());
+  private readonly findingsLoadMode = signal<Map<string, FindingsLoadMode>>(new Map());
 
   private readonly syncHistoryState = signal<Map<string, SyncHistoryEntry[]>>(new Map());
   private readonly syncHistoryStatus = signal<Map<string, LoadState>>(new Map());
@@ -103,6 +107,14 @@ export class SecurityStore {
     return mapGetValue(this.findingsStatus(), normalizedSourceId) ?? 'idle';
   }
 
+  getFindingsLoadMode(sourceId: string): FindingsLoadMode | 'none' {
+    const normalizedSourceId = sourceId.trim();
+    if (!normalizedSourceId) {
+      return 'none';
+    }
+    return mapGetValue(this.findingsLoadMode(), normalizedSourceId) ?? 'none';
+  }
+
   getSyncHistory(sourceId: string): SyncHistoryEntry[] {
     const normalizedSourceId = sourceId.trim();
     if (!normalizedSourceId) {
@@ -151,32 +163,49 @@ export class SecurityStore {
     return mapGetValue(this.sourceResultsRecomputeStatus(), normalizedSourceId) ?? 'idle';
   }
 
-  async ensureFindings(sourceId: string): Promise<void> {
+  async ensureFindings(sourceId: string, mode: FindingsLoadMode = 'preview'): Promise<void> {
     const normalizedSourceId = sourceId.trim();
     if (!normalizedSourceId) {
       return;
     }
     const status = untracked(() => this.getFindingsStatus(normalizedSourceId));
-    if (status === 'loading' || status === 'loaded') {
+    if (status === 'loading') {
       return;
     }
-    await this.refreshFindings(normalizedSourceId);
+    const loadedMode = untracked(() => this.getFindingsLoadMode(normalizedSourceId));
+    if (status === 'loaded' && (loadedMode === mode || loadedMode === 'all')) {
+      return;
+    }
+    await this.refreshFindings(normalizedSourceId, { mode });
   }
 
-  async refreshFindings(sourceId: string, silent = false): Promise<void> {
+  async refreshFindings(
+    sourceId: string,
+    options?: {
+      silent?: boolean;
+      mode?: FindingsLoadMode;
+    }
+  ): Promise<void> {
     const normalizedSourceId = sourceId.trim();
     if (!normalizedSourceId) {
       return;
     }
+    const silent = options?.silent ?? false;
+    const currentMode = this.getFindingsLoadMode(normalizedSourceId);
+    const mode = options?.mode ?? (currentMode === 'none' ? 'preview' : currentMode);
     const statusBefore = this.getFindingsStatus(normalizedSourceId);
     if (!silent) {
       this.findingsStatus.set(mapSetValue(this.findingsStatus(), normalizedSourceId, 'loading'));
     }
 
     try {
-      const items = await this.api.listFindings(normalizedSourceId);
+      const items = await this.api.listFindings(
+        normalizedSourceId,
+        mode === 'preview' ? { pageSize: findingsPreviewLimit, maxItems: findingsPreviewLimit } : undefined
+      );
       this.findingsState.set(mapSetValue(this.findingsState(), normalizedSourceId, items));
       this.findingsStatus.set(mapSetValue(this.findingsStatus(), normalizedSourceId, 'loaded'));
+      this.findingsLoadMode.set(mapSetValue(this.findingsLoadMode(), normalizedSourceId, mode));
     } catch (error) {
       if (!silent) {
         this.errorHandler.handleError(error);

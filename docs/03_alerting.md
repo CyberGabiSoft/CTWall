@@ -6,6 +6,9 @@ CTWall alerting is built around an Alertmanager-centric runtime:
    - Malware alerts support two independent detection modes:
      - `purl_version_smart` (default enabled),
      - `purl_contains_prefix` (default disabled).
+   - Mode eligibility is match-type aware:
+     - `EXACT` findings map to `purl_version_smart`,
+     - `CONTAINS_PREFIX` findings map to `purl_contains_prefix`.
    - Each mode has independent per-project alert severity (`ERROR/WARNING/INFO`).
    - Mode is encoded into malware group key (`detect_mode:...`) so both modes can emit separate alerts for the same malware PURL.
    - Group severity is synchronized with active mode severity on both reconcile and occurrence upsert paths.

@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   connectorRouteIds,
+  formatDetectionData,
+  groupDetectionData,
   groupDetectionMode,
   groupDedupRule,
   isNilUUID,
   matchesAdvancedFilter,
   normalizeDedupRules,
   normalizeDetectionModeCode,
+  normalizeMatchTypeCode,
+  occurrenceDetectionData,
   occurrenceDetectionMode,
   normalizeMinSeverity,
   serializeDedupRules
@@ -28,6 +32,42 @@ describe('security-alerts.utils', () => {
     expect(normalizeDetectionModeCode('PURL_VERSION_SMART')).toBe('purl_version_smart');
     expect(groupDetectionMode('detect_mode:purl_contains_prefix|dedup_on:test')).toBe('purl_contains_prefix');
     expect(occurrenceDetectionMode({ detectMode: 'PURL_CONTAINS_PREFIX' })).toBe('purl_contains_prefix');
+  });
+
+  it('builds detection data strings', () => {
+    expect(normalizeMatchTypeCode('contains_prefix')).toBe('CONTAINS_PREFIX');
+    const exact = formatDetectionData(
+      'pkg:npm/component@1.0.0',
+      'pkg:npm/mal@1.0.0',
+      'EXACT',
+      'purl_version_smart'
+    );
+    expect(exact).toContain('pkg:npm/component@1.0.0 -> pkg:npm/mal@1.0.0');
+    expect(exact).toContain('base+version');
+    expect(exact).toContain('pkg:npm/component@1.0.0 == pkg:npm/mal@1.0.0');
+
+    const groupPrefix = groupDetectionData('detect_mode:purl_contains_prefix|malware_purl:pkg:npm/mal@1.0.0');
+    expect(groupPrefix).toContain('* -> pkg:npm/mal@1.0.0');
+    expect(groupPrefix).toContain('base:');
+    expect(groupPrefix).toContain('* == pkg:npm/mal');
+
+    const componentPrefix = groupDetectionData(
+      'detect_mode:purl_contains_prefix|malware_purl:pkg:npm/mal@1.0.0',
+      'pkg:npm/component@1.0.0'
+    );
+    expect(componentPrefix).toContain('pkg:npm/component@1.0.0 -> pkg:npm/mal@1.0.0');
+    expect(componentPrefix).toContain('base: pkg:npm/component == pkg:npm/mal');
+    expect(
+      occurrenceDetectionData(
+        {
+          componentPurl: 'pkg:npm/component@1.0.0',
+          malwarePurl: 'pkg:npm/mal@1.0.0',
+          matchType: 'CONTAINS_PREFIX',
+          detectMode: 'PURL_CONTAINS_PREFIX'
+        },
+        ''
+      )
+    ).toContain('base: pkg:npm/component == pkg:npm/mal');
   });
 
   it('normalizes severity and dedup rules serialization', () => {

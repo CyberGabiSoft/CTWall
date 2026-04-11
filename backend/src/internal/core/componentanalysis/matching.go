@@ -9,8 +9,8 @@ import (
 	"backend/internal/store"
 )
 
-// PURLVersionSmartMode documents the effective malware matching policy:
-// exact PURL+version when version is known, prefix fallback when it is missing.
+// PURLVersionSmartMode documents strict version-aware malware matching:
+// exact base PURL + exact version match from OSV affected[].versions.
 const PURLVersionSmartMode = "PURL_VERSION_SMART"
 
 type malwareMatchCandidateLister interface {
@@ -19,7 +19,7 @@ type malwareMatchCandidateLister interface {
 
 func matchSmart(componentPURL string, candidate store.MalwareMatchCandidate) (bool, string, string) {
 	componentBase, componentVersion := normalizePURLBaseAndVersion(componentPURL)
-	malwareBase, _ := normalizePURLBaseAndVersion(candidate.ComponentPURL)
+	malwareBase, malwareVersionFromPURL := normalizePURLBaseAndVersion(candidate.ComponentPURL)
 	if componentBase == "" || malwareBase == "" {
 		return false, "", ""
 	}
@@ -27,21 +27,38 @@ func matchSmart(componentPURL string, candidate store.MalwareMatchCandidate) (bo
 		return false, "", ""
 	}
 
+	// Smart mode is strictly version-aware: if component version is unknown,
+	// this mode does not emit a match (prefix mode handles that path).
+	if componentVersion == "" {
+		return false, "", ""
+	}
+
+	// If OSV affected.package.purl already carries a concrete version, treat it as
+	// a strict smart constraint (component.version must be exactly that version).
+	if malwareVersionFromPURL != "" && componentVersion != malwareVersionFromPURL {
+		return false, "", ""
+	}
+
 	malwareVersions := resolveMalwareVersions(candidate, malwareBase)
 
-	// If component version is known, require exact version match unless malware finding is version-agnostic.
-	if componentVersion != "" {
-		if len(malwareVersions) == 0 {
-			return true, store.ComponentAnalysisMatchContainsPrefix, malwareBase
-		}
-		if !containsVersion(malwareVersions, componentVersion) {
+	// When OSV provides a concrete version in package.purl, that explicit value is
+	// sufficient for smart matching (versions[] list is optional in that path).
+	// If versions[] exists as well, keep it consistent with the selected version.
+	if malwareVersionFromPURL != "" {
+		if len(malwareVersions) > 0 && !containsVersion(malwareVersions, componentVersion) {
 			return false, "", ""
 		}
 		return true, store.ComponentAnalysisMatchExact, buildVersionedPURL(malwareBase, componentVersion)
 	}
 
-	// Component version unknown -> prefix/base fallback.
-	return true, store.ComponentAnalysisMatchContainsPrefix, malwareBase
+	// Smart mode requires explicit affected versions and exact version equality.
+	if len(malwareVersions) == 0 {
+		return false, "", ""
+	}
+	if !containsVersion(malwareVersions, componentVersion) {
+		return false, "", ""
+	}
+	return true, store.ComponentAnalysisMatchExact, buildVersionedPURL(malwareBase, componentVersion)
 }
 
 func matchContainsPrefix(componentPURL string, candidate store.MalwareMatchCandidate) (bool, string) {
@@ -128,11 +145,22 @@ func normalizePURLBaseAndVersion(raw string) (string, string) {
 	}
 	lastSlash := strings.LastIndex(basePart, "/")
 	lastAt := strings.LastIndex(basePart, "@")
-	if lastAt <= lastSlash {
+	versionDelimiter := "@"
+	delimiterIndex := lastAt
+	if delimiterIndex <= lastSlash {
+		// Compatibility: accept non-standard "name:version" PURLs (seen in some PyPI exports)
+		// and treat ":" after the package path as a version separator.
+		lastColon := strings.LastIndex(basePart, ":")
+		if lastColon > lastSlash {
+			versionDelimiter = ":"
+			delimiterIndex = lastColon
+		}
+	}
+	if delimiterIndex <= lastSlash {
 		return strings.TrimSpace(basePart), ""
 	}
-	base := strings.TrimSpace(basePart[:lastAt])
-	version := normalizeVersionWithEpoch(basePart[lastAt+1:], rawQuery)
+	base := strings.TrimSpace(basePart[:delimiterIndex])
+	version := normalizeVersionWithEpoch(basePart[delimiterIndex+len(versionDelimiter):], rawQuery)
 	if strings.EqualFold(version, "unknown") {
 		version = ""
 	}

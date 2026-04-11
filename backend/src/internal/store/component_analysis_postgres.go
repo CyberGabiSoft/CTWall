@@ -868,6 +868,12 @@ func componentBasePURL(componentPURL string) string {
 	lastAt := strings.LastIndex(clean, "@")
 	if lastAt > lastSlash {
 		clean = clean[:lastAt]
+	} else {
+		// Compatibility: accept non-standard "name:version" PURLs produced by some SBOMs.
+		lastColon := strings.LastIndex(clean, ":")
+		if lastColon > lastSlash {
+			clean = clean[:lastColon]
+		}
 	}
 	return strings.TrimSpace(clean)
 }

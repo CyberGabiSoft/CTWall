@@ -100,9 +100,9 @@
 }
 
 .status-pill--open {
-  background: var(--ctw-warning-soft);
-  color: var(--ctw-warning-text);
-  border: 1px solid color-mix(in srgb, var(--ctw-warning-text) 30%, transparent);
+  background: transparent;
+  color: var(--ctw-text);
+  border: 1px solid var(--ctw-border-subtle);
 }
 
 .status-pill--ack {
