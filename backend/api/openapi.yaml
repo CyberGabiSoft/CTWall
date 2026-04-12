@@ -1751,6 +1751,14 @@ components:
         enabled: { type: boolean }
         severity:
           $ref: "#/components/schemas/AlertDetectionModeSeverity"
+        lookbackDays:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 1
+          description: |
+            Used only for PURL_CONTAINS_PREFIX.
+            null means all history, positive value means last N days.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -1773,6 +1781,14 @@ components:
         severity:
           type: string
           enum: [INFO, WARNING, ERROR]
+        lookbackDays:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 1
+          description: |
+            Used only for PURL_CONTAINS_PREFIX.
+            null means all history, positive value means last N days.
 
     PutAlertDetectionModesRequest:
       type: object

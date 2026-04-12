@@ -37,7 +37,7 @@
     "@angular/platform-browser": "21.2.8",
     "@angular/router": "21.2.8",
     "jszip": "^3.10.1",
-    "lucide-angular": "^0.563.0",
+    "lucide-angular": "^1.0.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -50,19 +50,19 @@
     "@angular/compiler-cli": "21.2.8",
     "@emnapi/core": "^1.9.2",
     "@emnapi/runtime": "^1.9.2",
+    "@eslint/js": "^10.0.1",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
     "@vitest/browser-preview": "^4.1.4",
     "@vitest/coverage-v8": "^4.1.4",
-    "eslint": "^9.39.2",
+    "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-security": "^3.0.1",
-    "jsdom": "^27.1.0",
-    "typescript": "~5.9.2",
+    "eslint-plugin-security": "^4.0.0",
+    "jsdom": "^29.0.2",
+    "typescript": "~5.9.3",
     "vitest": "^4.1.4"
   },
   "overrides": {
-    "ajv": "^8.18.0",
     "undici": "^7.24.5"
   }
 }

@@ -132,7 +132,7 @@
 
 .detection-mode-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(170px, 220px);
+  grid-template-columns: minmax(0, 1fr) auto minmax(170px, 220px) minmax(170px, 220px);
   gap: 12px;
   align-items: center;
   padding: 10px 12px;
@@ -153,6 +153,27 @@
 
 .detection-mode-severity {
   min-width: 170px;
+}
+
+.detection-mode-lookback {
+  min-width: 170px;
+}
+
+@media (max-width: 1240px) {
+  .detection-mode-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .detection-mode-severity {
+    min-width: 0;
+    width: min(260px, 100%);
+  }
+
+  .detection-mode-lookback {
+    min-width: 0;
+    width: min(260px, 100%);
+  }
 }
 
 .connector-meta {
@@ -241,9 +262,6 @@
     grid-template-columns: 1fr;
   }
   .routing-grid {
-    grid-template-columns: 1fr;
-  }
-  .detection-mode-row {
     grid-template-columns: 1fr;
   }
 }

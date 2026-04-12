@@ -20,13 +20,13 @@ func (s *PostgresStore) ensureAlertDetectionModesDefaultsCtx(ctx context.Context
 	}
 	now := time.Now().UTC()
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO alert_detection_modes (project_id, mode, enabled, severity, created_at, updated_at)
-SELECT $1::uuid, d.mode, d.enabled, d.severity, $2, $2
+INSERT INTO alert_detection_modes (project_id, mode, enabled, severity, lookback_days, created_at, updated_at)
+SELECT $1::uuid, d.mode, d.enabled, d.severity, d.lookback_days, $2, $2
 FROM (
   VALUES
-    ('PURL_VERSION_SMART'::text, TRUE,  'ERROR'::text),
-    ('PURL_CONTAINS_PREFIX'::text, FALSE, 'WARN'::text)
-) AS d(mode, enabled, severity)
+    ('PURL_VERSION_SMART'::text, TRUE,  'ERROR'::text, NULL::integer),
+    ('PURL_CONTAINS_PREFIX'::text, FALSE, 'WARN'::text, NULL::integer)
+) AS d(mode, enabled, severity, lookback_days)
 ON CONFLICT (project_id, mode) DO NOTHING
 `, projectID, now)
 	return err
@@ -34,7 +34,7 @@ ON CONFLICT (project_id, mode) DO NOTHING
 
 func (s *PostgresStore) listAlertDetectionModesCtx(ctx context.Context, projectID uuid.UUID) ([]models.AlertDetectionMode, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, project_id, mode, enabled, severity, created_at, updated_at
+SELECT id, project_id, mode, enabled, severity, lookback_days, created_at, updated_at
 FROM alert_detection_modes
 WHERE project_id = $1
 ORDER BY CASE mode
@@ -51,16 +51,24 @@ END, mode ASC
 	out := make([]models.AlertDetectionMode, 0, 2)
 	for rows.Next() {
 		var item models.AlertDetectionMode
+		var lookbackDays sql.NullInt32
 		if err := rows.Scan(
 			&item.ID,
 			&item.ProjectID,
 			&item.Mode,
 			&item.Enabled,
 			&item.Severity,
+			&lookbackDays,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if lookbackDays.Valid {
+			value := int(lookbackDays.Int32)
+			item.LookbackDays = &value
+		} else {
+			item.LookbackDays = nil
 		}
 		item.Mode = strings.ToUpper(strings.TrimSpace(item.Mode))
 		item.Severity = strings.ToUpper(strings.TrimSpace(item.Severity))
@@ -81,29 +89,32 @@ func (s *PostgresStore) resolveAlertDetectionModeConfigCtx(ctx context.Context, 
 		return nil, err
 	}
 	row := s.db.QueryRowContext(ctx, `
-SELECT id, project_id, mode, enabled, severity, created_at, updated_at
+SELECT id, project_id, mode, enabled, severity, lookback_days, created_at, updated_at
 FROM alert_detection_modes
 WHERE project_id = $1 AND mode = $2
 LIMIT 1
 `, projectID, string(mode))
 	var item models.AlertDetectionMode
+	var lookbackDays sql.NullInt32
 	if err := row.Scan(
 		&item.ID,
 		&item.ProjectID,
 		&item.Mode,
 		&item.Enabled,
 		&item.Severity,
+		&lookbackDays,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// Defensive fallback; defaults should exist after ensure.
 			fallback := models.AlertDetectionMode{
-				ID:        uuid.Nil,
-				ProjectID: projectID,
-				Mode:      string(mode),
-				Enabled:   true,
-				Severity:  string(eventmeta.SeverityError),
+				ID:           uuid.Nil,
+				ProjectID:    projectID,
+				Mode:         string(mode),
+				Enabled:      true,
+				Severity:     string(eventmeta.SeverityError),
+				LookbackDays: nil,
 			}
 			if mode == AlertDetectionModePURLContainsPrefix {
 				fallback.Enabled = false
@@ -112,6 +123,12 @@ LIMIT 1
 			return &fallback, nil
 		}
 		return nil, err
+	}
+	if lookbackDays.Valid {
+		value := int(lookbackDays.Int32)
+		item.LookbackDays = &value
+	} else {
+		item.LookbackDays = nil
 	}
 	item.Mode = strings.ToUpper(strings.TrimSpace(item.Mode))
 	item.Severity = strings.ToUpper(strings.TrimSpace(item.Severity))
@@ -156,10 +173,18 @@ func (s *PostgresStore) ReplaceAlertDetectionModes(projectID uuid.UUID, inputs [
 		if severity == eventmeta.Severity("") || !eventmeta.ValidSeverity(string(severity)) {
 			return nil, ErrInvalidPayload
 		}
+		lookbackDays := normalizeAlertDetectionLookbackDays(item.LookbackDays)
+		if mode != AlertDetectionModePURLContainsPrefix {
+			lookbackDays = nil
+		}
+		if lookbackDays != nil && *lookbackDays <= 0 {
+			return nil, ErrInvalidPayload
+		}
 		normalized[mode] = AlertDetectionModeInput{
-			Mode:     mode,
-			Enabled:  item.Enabled,
-			Severity: severity,
+			Mode:         mode,
+			Enabled:      item.Enabled,
+			Severity:     severity,
+			LookbackDays: lookbackDays,
 		}
 	}
 
@@ -174,13 +199,13 @@ func (s *PostgresStore) ReplaceAlertDetectionModes(projectID uuid.UUID, inputs [
 
 	now := time.Now().UTC()
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO alert_detection_modes (project_id, mode, enabled, severity, created_at, updated_at)
-SELECT $1::uuid, d.mode, d.enabled, d.severity, $2, $2
+INSERT INTO alert_detection_modes (project_id, mode, enabled, severity, lookback_days, created_at, updated_at)
+SELECT $1::uuid, d.mode, d.enabled, d.severity, d.lookback_days, $2, $2
 FROM (
   VALUES
-    ('PURL_VERSION_SMART'::text, TRUE,  'ERROR'::text),
-    ('PURL_CONTAINS_PREFIX'::text, FALSE, 'WARN'::text)
-) AS d(mode, enabled, severity)
+    ('PURL_VERSION_SMART'::text, TRUE,  'ERROR'::text, NULL::integer),
+    ('PURL_CONTAINS_PREFIX'::text, FALSE, 'WARN'::text, NULL::integer)
+) AS d(mode, enabled, severity, lookback_days)
 ON CONFLICT (project_id, mode) DO NOTHING
 `, projectID, now); err != nil {
 		return nil, err
@@ -216,13 +241,14 @@ ON CONFLICT (project_id, mode) DO NOTHING
 	for _, mode := range orderedModes {
 		item := normalized[mode]
 		if _, err := tx.ExecContext(ctx, `
-INSERT INTO alert_detection_modes (project_id, mode, enabled, severity, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $5)
+INSERT INTO alert_detection_modes (project_id, mode, enabled, severity, lookback_days, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $6)
 ON CONFLICT (project_id, mode) DO UPDATE
 SET enabled = EXCLUDED.enabled,
     severity = EXCLUDED.severity,
+    lookback_days = EXCLUDED.lookback_days,
     updated_at = EXCLUDED.updated_at
-`, projectID, string(item.Mode), item.Enabled, string(item.Severity), now); err != nil {
+`, projectID, string(item.Mode), item.Enabled, string(item.Severity), item.LookbackDays, now); err != nil {
 			return nil, err
 		}
 	}
@@ -231,4 +257,12 @@ SET enabled = EXCLUDED.enabled,
 		return nil, err
 	}
 	return s.ListAlertDetectionModes(projectID)
+}
+
+func normalizeAlertDetectionLookbackDays(raw *int) *int {
+	if raw == nil {
+		return nil
+	}
+	value := *raw
+	return &value
 }

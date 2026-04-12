@@ -16,9 +16,10 @@ type alertDetectionModesResponse struct {
 }
 
 type alertDetectionModePayload struct {
-	Mode     string `json:"mode"`
-	Enabled  *bool  `json:"enabled,omitempty"`
-	Severity string `json:"severity"`
+	Mode         string `json:"mode"`
+	Enabled      *bool  `json:"enabled,omitempty"`
+	Severity     string `json:"severity"`
+	LookbackDays *int   `json:"lookbackDays,omitempty"`
 }
 
 type putAlertDetectionModesRequest struct {
@@ -90,11 +91,23 @@ func PutAlertDetectionModesHandler(st store.Store, auditWriter *audit.Writer) ht
 			if raw.Enabled != nil {
 				enabled = *raw.Enabled
 			}
+			var lookbackDays *int
+			if normalizedMode == store.AlertDetectionModePURLContainsPrefix {
+				if raw.LookbackDays != nil {
+					if *raw.LookbackDays <= 0 {
+						writeProblem(w, r, http.StatusBadRequest, "Invalid Request", "Invalid lookbackDays for detection mode.", nil)
+						return
+					}
+					value := *raw.LookbackDays
+					lookbackDays = &value
+				}
+			}
 
 			inputs = append(inputs, store.AlertDetectionModeInput{
-				Mode:     normalizedMode,
-				Enabled:  enabled,
-				Severity: eventmeta.Severity(severity),
+				Mode:         normalizedMode,
+				Enabled:      enabled,
+				Severity:     eventmeta.Severity(severity),
+				LookbackDays: lookbackDays,
 			})
 		}
 

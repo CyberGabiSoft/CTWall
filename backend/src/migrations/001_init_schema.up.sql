@@ -142,10 +142,12 @@ CREATE TABLE public.alert_detection_modes (
     mode text NOT NULL,
     enabled boolean NOT NULL,
     severity text NOT NULL,
+    lookback_days integer,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT alert_detection_modes_mode_check CHECK ((mode = ANY (ARRAY['PURL_VERSION_SMART'::text, 'PURL_CONTAINS_PREFIX'::text]))),
-    CONSTRAINT alert_detection_modes_severity_check CHECK ((severity = ANY (ARRAY['INFO'::text, 'WARN'::text, 'ERROR'::text])))
+    CONSTRAINT alert_detection_modes_severity_check CHECK ((severity = ANY (ARRAY['INFO'::text, 'WARN'::text, 'ERROR'::text]))),
+    CONSTRAINT alert_detection_modes_lookback_days_check CHECK (((lookback_days IS NULL) OR (lookback_days > 0)))
 );
 
 

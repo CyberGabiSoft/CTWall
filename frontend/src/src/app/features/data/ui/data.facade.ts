@@ -48,7 +48,6 @@ import {
   filterComponentRows,
   DataComponentFilterState
 } from './data-component-filter.utils';
-import { mapSetValue } from '../../../shared/utils/map-utils';
 import {
   formatDetectionData,
   inferDetectionModeFromMatchType

@@ -630,7 +630,7 @@ export class SecuritySourcesComponent implements OnInit {
   readonly syncHistoryExpanded = signal<Set<string>>(new Set());
   readonly syncHistoryAutoRefreshInFlight = signal(false);
   readonly syncHistoryKickRefresh = signal(false);
-  private syncHistoryKickRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private syncHistoryKickRefreshTimer: ReturnType<typeof window.setTimeout> | null = null;
   readonly syncHistoryActionLabel = syncHistoryActionLabel;
   readonly recomputeHistoryActionLabel = recomputeHistoryActionLabel;
   readonly recomputeHistoryStatusClass = recomputeHistoryStatusClass;

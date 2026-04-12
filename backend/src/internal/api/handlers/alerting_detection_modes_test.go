@@ -65,8 +65,14 @@ func TestListAlertDetectionModesHandler_Defaults(t *testing.T) {
 	if !smart.Enabled || smart.Severity != "ERROR" {
 		t.Fatalf("unexpected smart defaults: enabled=%v severity=%q", smart.Enabled, smart.Severity)
 	}
+	if smart.LookbackDays != nil {
+		t.Fatalf("expected smart lookbackDays nil by default, got %v", *smart.LookbackDays)
+	}
 	if prefix.Enabled || prefix.Severity != "WARN" {
 		t.Fatalf("unexpected prefix defaults: enabled=%v severity=%q", prefix.Enabled, prefix.Severity)
+	}
+	if prefix.LookbackDays != nil {
+		t.Fatalf("expected prefix lookbackDays nil by default, got %v", *prefix.LookbackDays)
 	}
 }
 
@@ -83,9 +89,10 @@ func TestPutAlertDetectionModesHandler_ReplaceAndList(t *testing.T) {
 				"severity": "INFO",
 			},
 			{
-				"mode":     "PURL_CONTAINS_PREFIX",
-				"enabled":  true,
-				"severity": "WARNING",
+				"mode":         "PURL_CONTAINS_PREFIX",
+				"enabled":      true,
+				"severity":     "WARNING",
+				"lookbackDays": 7,
 			},
 		},
 	}
@@ -121,6 +128,15 @@ func TestPutAlertDetectionModesHandler_ReplaceAndList(t *testing.T) {
 	if len(listPayload.Items) != 2 {
 		t.Fatalf("expected 2 items in list, got %d", len(listPayload.Items))
 	}
+	for i := range listPayload.Items {
+		item := listPayload.Items[i]
+		if item.Mode != string(store.AlertDetectionModePURLContainsPrefix) {
+			continue
+		}
+		if item.LookbackDays == nil || *item.LookbackDays != 7 {
+			t.Fatalf("expected prefix lookbackDays=7, got %+v", item.LookbackDays)
+		}
+	}
 }
 
 func TestPutAlertDetectionModesHandler_InvalidMode(t *testing.T) {
@@ -138,5 +154,23 @@ func TestPutAlertDetectionModesHandler_InvalidMode(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for invalid mode payload, got %d", rec.Code)
+	}
+}
+
+func TestPutAlertDetectionModesHandler_InvalidPrefixLookbackDays(t *testing.T) {
+	st, _ := tests.NewPostgresTestStore(t)
+	handler := PutAlertDetectionModesHandler(st, nil)
+
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"/api/v1/alerting/detection-modes",
+		bytes.NewBufferString(`{"modes":[{"mode":"PURL_CONTAINS_PREFIX","enabled":true,"severity":"WARN","lookbackDays":0}]}`),
+	)
+	req, _, _ = withAuthedAdminAndProject(t, st, req)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid lookbackDays payload, got %d", rec.Code)
 	}
 }

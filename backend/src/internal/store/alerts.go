@@ -202,6 +202,9 @@ type AlertDetectionModeInput struct {
 	Mode     AlertDetectionMode
 	Enabled  bool
 	Severity eventmeta.Severity
+	// LookbackDays applies only to PURL_CONTAINS_PREFIX:
+	// nil => all history; >0 => last N days.
+	LookbackDays *int
 }
 
 func normalizeAlertDetectionSeverity(raw string) eventmeta.Severity {
@@ -220,14 +223,16 @@ func normalizeAlertDetectionSeverity(raw string) eventmeta.Severity {
 func defaultAlertDetectionModeInputs() []AlertDetectionModeInput {
 	return []AlertDetectionModeInput{
 		{
-			Mode:     AlertDetectionModePURLVersionSmart,
-			Enabled:  true,
-			Severity: eventmeta.SeverityError,
+			Mode:         AlertDetectionModePURLVersionSmart,
+			Enabled:      true,
+			Severity:     eventmeta.SeverityError,
+			LookbackDays: nil,
 		},
 		{
-			Mode:     AlertDetectionModePURLContainsPrefix,
-			Enabled:  false,
-			Severity: eventmeta.SeverityWarn,
+			Mode:         AlertDetectionModePURLContainsPrefix,
+			Enabled:      false,
+			Severity:     eventmeta.SeverityWarn,
+			LookbackDays: nil,
 		},
 	}
 }

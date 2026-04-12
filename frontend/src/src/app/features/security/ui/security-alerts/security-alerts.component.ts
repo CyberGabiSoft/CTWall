@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Check, ExternalLink, Filter, LucideAngularModule, RefreshCw, XCircle } from 'lucide-angular';
@@ -148,11 +149,13 @@ function buildDefaultGroupMultiFilterRecord(): Record<GroupColumnKey, string[]> 
 
 type AlertsTableKind = 'groups' | 'occurrences';
 type DedupScopeBuilderOption = AlertDedupScope | 'ALL';
-type AlertDetectionModeFormState = {
+interface AlertDetectionModeFormState {
   mode: AlertDetectionMode;
   enabled: boolean;
   severity: AlertMinSeverity;
-};
+  // nil-like empty value means "all history"; positive integer means last N days.
+  lookbackDays: number | null;
+}
 
 @Component({
   selector: 'app-security-alerts',
@@ -161,6 +164,7 @@ type AlertDetectionModeFormState = {
     MatButtonModule,
     MatCheckboxModule,
     MatFormFieldModule,
+    MatInputModule,
     MatSelectModule,
     MatTooltipModule,
     LucideAngularModule,
@@ -602,6 +606,31 @@ export class SecurityAlertsComponent {
     );
   }
 
+  setDetectionModeLookbackDays(mode: AlertDetectionMode, rawValue: string): void {
+    if (!this.canManageDetectionModes()) {
+      return;
+    }
+    this.detectionModes.update((items) =>
+      items.map((item) => {
+        if (item.mode !== mode) {
+          return item;
+        }
+        if (mode !== 'PURL_CONTAINS_PREFIX') {
+          return { ...item, lookbackDays: null };
+        }
+        const trimmed = (rawValue ?? '').trim();
+        if (!trimmed) {
+          return { ...item, lookbackDays: null };
+        }
+        const numeric = Number.parseInt(trimmed, 10);
+        if (!Number.isFinite(numeric) || numeric <= 0) {
+          return item;
+        }
+        return { ...item, lookbackDays: numeric };
+      })
+    );
+  }
+
   async saveDetectionModes(): Promise<void> {
     if (!this.canManageDetectionModes() || this.detectionModesSaving() || !this.detectionModesDirty()) {
       return;
@@ -613,7 +642,8 @@ export class SecurityAlertsComponent {
         modes: this.detectionModes().map((item) => ({
           mode: item.mode,
           enabled: item.enabled,
-          severity: item.severity
+          severity: item.severity,
+          lookbackDays: item.mode === 'PURL_CONTAINS_PREFIX' ? item.lookbackDays : null
         }))
       };
       const saved = await this.api.putAlertDetectionModes(payload);
@@ -837,7 +867,8 @@ export class SecurityAlertsComponent {
         {
           mode: 'PURL_VERSION_SMART',
           enabled: true,
-          severity: 'ERROR'
+          severity: 'ERROR',
+          lookbackDays: null
         }
       ],
       [
@@ -845,7 +876,8 @@ export class SecurityAlertsComponent {
         {
           mode: 'PURL_CONTAINS_PREFIX',
           enabled: false,
-          severity: 'WARNING'
+          severity: 'WARNING',
+          lookbackDays: null
         }
       ]
     ]);
@@ -858,7 +890,11 @@ export class SecurityAlertsComponent {
       defaults.set(mode, {
         mode,
         enabled: !!raw.enabled,
-        severity: this.normalizeDetectionModeSeverity(raw.severity)
+        severity: this.normalizeDetectionModeSeverity(raw.severity),
+        lookbackDays:
+          mode === 'PURL_CONTAINS_PREFIX'
+            ? this.normalizeDetectionModeLookbackDays(raw.lookbackDays)
+            : null
       });
     }
 
@@ -880,10 +916,25 @@ export class SecurityAlertsComponent {
     return 'INFO';
   }
 
+  private normalizeDetectionModeLookbackDays(value: number | null | undefined): number | null {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return null;
+    }
+    const days = Math.trunc(numeric);
+    if (days <= 0) {
+      return null;
+    }
+    return days;
+  }
+
   private serializeDetectionModes(items: AlertDetectionModeFormState[]): string {
     return [...items]
       .sort((left, right) => this.detectionModeSortRank(left.mode) - this.detectionModeSortRank(right.mode))
-      .map((item) => `${item.mode}:${item.enabled ? '1' : '0'}:${item.severity}`)
+      .map((item) => `${item.mode}:${item.enabled ? '1' : '0'}:${item.severity}:${item.lookbackDays ?? 'all'}`)
       .join('|');
   }
 
