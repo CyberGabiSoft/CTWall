@@ -8,7 +8,8 @@ import {
   computed,
   effect,
   inject,
-  signal
+  signal,
+  untracked
 } from '@angular/core';
 import { DragDropModule, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
@@ -247,6 +248,14 @@ export class SecuritySourcesComponent implements OnInit {
     }
     return this.store.getFindingsStatus(id);
   });
+  readonly findingsLoadMode = computed(() => {
+    const id = this.selectedSourceId();
+    if (!id) {
+      return 'none';
+    }
+    return this.store.getFindingsLoadMode(id);
+  });
+  readonly canLoadAllFindings = computed(() => this.findingsStatus() === 'loaded' && this.findingsLoadMode() === 'preview');
   readonly findingsTableStatus = computed(() => {
     const status = this.findingsStatus();
     return status === 'idle' ? 'loaded' : status;
@@ -745,7 +754,9 @@ export class SecuritySourcesComponent implements OnInit {
     effect(() => {
       const sourceId = this.selectedSourceId();
       if (sourceId) {
-        void this.store.ensureSyncHistory(sourceId);
+        untracked(() => {
+          void this.store.refreshSyncHistory(sourceId);
+        });
       }
     });
 
@@ -774,12 +785,16 @@ export class SecuritySourcesComponent implements OnInit {
     effect(() => {
       const mode = this.recomputeHistoryMode();
       if (mode === 'summaries') {
-        void this.store.ensureSummaryRecomputeHistory();
+        untracked(() => {
+          void this.store.refreshSummaryRecomputeHistory();
+        });
         return;
       }
       const sourceId = this.selectedSourceId();
       if (sourceId) {
-        void this.store.ensureSourceResultsRecomputeHistory(sourceId);
+        untracked(() => {
+          void this.store.refreshSourceResultsRecomputeHistory(sourceId);
+        });
       }
     });
 
@@ -792,7 +807,7 @@ export class SecuritySourcesComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.store.ensureSources();
+    void this.store.refreshSources();
   }
 
   selectSource(sourceId: string): void {
@@ -1016,7 +1031,15 @@ export class SecuritySourcesComponent implements OnInit {
 
   async loadFindings(sourceId: string): Promise<void> {
     this.selectedSourceId.set(sourceId);
-    await this.store.ensureFindings(sourceId);
+    await this.store.ensureFindings(sourceId, 'preview');
+  }
+
+  async loadAllFindings(): Promise<void> {
+    const sourceId = this.selectedSourceId();
+    if (!sourceId) {
+      return;
+    }
+    await this.store.ensureFindings(sourceId, 'all');
   }
 
   async refreshSelectedFindings(): Promise<void> {

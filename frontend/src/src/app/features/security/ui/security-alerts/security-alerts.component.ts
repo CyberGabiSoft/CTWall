@@ -1,9 +1,10 @@
 
 import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, DestroyRef, ErrorHandler, computed, effect, inject, signal, untracked } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -21,14 +22,18 @@ import {
   AdvancedFilterPanelComponent
 } from '../../../../shared/ui/advanced-filter-panel/advanced-filter-panel.component';
 import { DataTableExpandedDetailsComponent } from '../../../../shared/ui/data-table/data-table-expanded-details.component';
+import { buildExtendedFilterQueryParams, readExtendedFilterQueryParams } from '../../../../shared/utils/extended-filter-routing';
 import { AlertsApi, AlertGroupsListQuery, AlertOccurrencesListQuery } from '../../data-access/alerts.api';
 import {
+  AlertDetectionMode,
+  AlertDetectionModeState,
   AlertDedupRule,
   AlertDedupScope,
   AlertGroup,
   AlertMinSeverity,
   AlertOccurrence,
   AlertingConnectorState,
+  PutAlertDetectionModesRequest,
   PutAlertDedupRulesRequest
 } from '../../data-access/alerts.types';
 import { LoadState } from '../../../../shared/types/load-state';
@@ -51,6 +56,7 @@ import {
   normalizeDedupRules,
   normalizeMinSeverity,
   normalizeOptionalID,
+  occurrenceDetectionData,
   serializeDedupRules,
 } from './security-alerts.utils';
 import {
@@ -113,14 +119,47 @@ import {
   occurrenceValueForTable,
 } from './security-alerts.view';
 const DEDUP_MIN_SEVERITY_OPTIONS: AlertMinSeverity[] = ['INFO', 'WARNING', 'ERROR'];
+const DETECTION_MODE_SEVERITY_OPTIONS: AlertMinSeverity[] = ['ERROR', 'WARNING', 'INFO'];
+const DETECTION_MODE_ORDER: AlertDetectionMode[] = ['PURL_VERSION_SMART', 'PURL_CONTAINS_PREFIX'];
+const GROUP_STATUS_UI_VALUES = ['OPEN', 'CLOSED'] as const;
+const GROUP_STATUS_UI_SET = new Set<string>(GROUP_STATUS_UI_VALUES);
+const GROUP_STATUS_BACKEND_VALUES: NonNullable<AlertGroupsListQuery['status']> = [
+  'OPEN',
+  'ACKNOWLEDGED',
+  'CLOSED'
+];
+const GROUP_STATUS_BACKEND_SET = new Set<string>(GROUP_STATUS_BACKEND_VALUES);
+const ALERTS_GROUPS_TABLE_ID = 'alerts_groups';
+const ALERTS_OCCURRENCES_TABLE_ID = 'alerts_occurrences';
+
+function buildDefaultGroupFilterModeRecord(): Record<GroupColumnKey, AdvancedFilterMode> {
+  return {
+    ...buildModeRecord(GROUP_COLUMN_KEYS, 'contains'),
+    status: 'select'
+  };
+}
+
+function buildDefaultGroupMultiFilterRecord(): Record<GroupColumnKey, string[]> {
+  return {
+    ...buildMultiRecord(GROUP_COLUMN_KEYS),
+    status: ['OPEN']
+  };
+}
+
 type AlertsTableKind = 'groups' | 'occurrences';
 type DedupScopeBuilderOption = AlertDedupScope | 'ALL';
+type AlertDetectionModeFormState = {
+  mode: AlertDetectionMode;
+  enabled: boolean;
+  severity: AlertMinSeverity;
+};
 
 @Component({
   selector: 'app-security-alerts',
   imports: [
     MatCardModule,
     MatButtonModule,
+    MatCheckboxModule,
     MatFormFieldModule,
     MatSelectModule,
     MatTooltipModule,
@@ -151,10 +190,12 @@ export class SecurityAlertsComponent {
   private readonly api = inject(AlertsApi);
   private readonly dataApi = inject(DataApi);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly errorHandler = inject(ErrorHandler);
   private readonly destroyRef = inject(DestroyRef);
   private readonly projectContext = inject(ProjectContextService);
   private silentRefreshInFlight = false;
+  private applyingUrlFilters = false;
 
   readonly isAdmin = computed(() => this.projectContext.canAdmin());
 
@@ -182,6 +223,8 @@ export class SecurityAlertsComponent {
     'status',
     'category',
     'type',
+    'detectionMode',
+    'detectionData',
     'dedupRule',
     'title',
     'occurrences',
@@ -197,10 +240,10 @@ export class SecurityAlertsComponent {
     buildStringRecord(GROUP_COLUMN_KEYS)
   );
   readonly groupsFilterMode = signal<Record<GroupColumnKey, AdvancedFilterMode>>(
-    buildModeRecord(GROUP_COLUMN_KEYS, 'contains')
+    buildDefaultGroupFilterModeRecord()
   );
   readonly groupsMultiFilters = signal<Record<GroupColumnKey, string[]>>(
-    buildMultiRecord(GROUP_COLUMN_KEYS)
+    buildDefaultGroupMultiFilterRecord()
   );
   readonly groupsFilterRowVisible = computed(() => Object.values(this.groupsFilterVisible()).some(Boolean));
   readonly groupsSortColumn = signal<GroupColumnKey | null>('lastSeenAt');
@@ -209,8 +252,19 @@ export class SecurityAlertsComponent {
     const selected = new Set(this.groupsColumnOrder());
     return this.groupColumns.filter((c) => !selected.has(c.key as GroupColumnKey));
   });
+  readonly groupDetectionDataById = computed<ReadonlyMap<string, string>>(() => {
+    const byID = new Map<string, string>();
+    for (const occurrence of this.occurrences()) {
+      const groupID = (occurrence.groupId ?? '').trim();
+      if (!groupID || byID.has(groupID)) {
+        continue;
+      }
+      byID.set(groupID, occurrenceDetectionData(occurrence.details, occurrence.entityRef));
+    }
+    return byID;
+  });
   readonly groupsFilterOptions = computed<Record<GroupColumnKey, string[]>>(() =>
-    buildGroupFilterOptions(this.groups())
+    buildGroupFilterOptions(this.groups(), this.groupDetectionDataById())
   );
   readonly groupsAdvancedFields = computed<AdvancedFilterField[]>(() =>
     buildGroupAdvancedFields(
@@ -226,7 +280,6 @@ export class SecurityAlertsComponent {
   private readonly groupsAppliedQuery = signal<AlertGroupsListQuery>({
     page: 1,
     pageSize: 50,
-    severity: ['ERROR'],
     status: ['OPEN']
   });
 
@@ -256,6 +309,8 @@ export class SecurityAlertsComponent {
     'severity',
     'category',
     'type',
+    'detectionMode',
+    'detectionData',
     'title',
     'occurredAt',
     'entityRef'
@@ -297,8 +352,7 @@ export class SecurityAlertsComponent {
   // Server query snapshot (drives backend calls).
   private readonly occurrencesAppliedQuery = signal<AlertOccurrencesListQuery>({
     page: 1,
-    pageSize: 50,
-    severity: ['ERROR']
+    pageSize: 50
   });
 
   // Expandable rows for occurrences.
@@ -311,21 +365,23 @@ export class SecurityAlertsComponent {
     applyOccurrenceFiltersAndSort(this.occurrences(), this.occurrenceFilterState())
   );
 
-  readonly groupValue = alertGroupValue;
+  readonly groupValue = (row: AlertGroup, key: GroupColumnKey): string =>
+    alertGroupValue(row, key, { groupDetectionDataById: this.groupDetectionDataById() });
   readonly occurrenceValue = alertOccurrenceValue;
   readonly severityClass = alertSeverityClass;
   readonly statusClass = alertStatusClass;
   readonly isMalwareGroup = isMalwareAlertGroup;
   readonly isMalwareOccurrence = isMalwareAlertOccurrence;
   readonly occurrenceDetailsJson = alertOccurrenceDetailsJson;
-  readonly groupExpandedItems = alertGroupExpandedItems;
+  readonly groupExpandedItems = (row: AlertGroup) =>
+    alertGroupExpandedItems(row, { groupDetectionDataById: this.groupDetectionDataById() });
   readonly occurrenceExpandedItems = alertOccurrenceExpandedItems;
   readonly acknowledgeTooltip = (row: AlertGroup): string =>
     acknowledgeActionTooltip(row, this.isAdmin());
   readonly closeTooltip = (row: AlertGroup): string =>
     closeActionTooltip(row, this.isAdmin());
   readonly groupExpandedDetailsForTable = (row: unknown) =>
-    alertGroupExpandedItems(row as AlertGroup);
+    alertGroupExpandedItems(row as AlertGroup, { groupDetectionDataById: this.groupDetectionDataById() });
   readonly occurrenceExpandedDetailsForTable = (row: unknown) =>
     alertOccurrenceExpandedItems(row as AlertOccurrence);
 
@@ -338,6 +394,28 @@ export class SecurityAlertsComponent {
   readonly products = signal<Array<{ id: string; name: string }>>([]);
   readonly scopes = signal<Array<{ id: string; name: string }>>([]);
   readonly tests = signal<Array<{ id: string; name: string }>>([]);
+  readonly canManageDetectionModes = computed(() => this.projectContext.canWrite());
+  readonly detectionModesStatus = signal<LoadState>('idle');
+  readonly detectionModesError = signal<string | null>(null);
+  readonly detectionModes = signal<AlertDetectionModeFormState[]>([]);
+  readonly detectionModesSavedSnapshot = signal<AlertDetectionModeFormState[]>([]);
+  readonly detectionModesSaving = signal(false);
+  readonly detectionModeSeverityOptions = DETECTION_MODE_SEVERITY_OPTIONS;
+  readonly detectionModesDirty = computed(() => {
+    return this.serializeDetectionModes(this.detectionModes()) !== this.serializeDetectionModes(this.detectionModesSavedSnapshot());
+  });
+  readonly detectionModeCode = (mode: AlertDetectionMode): string => {
+    if (mode === 'PURL_VERSION_SMART') {
+      return 'purl_version_smart';
+    }
+    return 'purl_contains_prefix';
+  };
+  readonly detectionModeDescription = (mode: AlertDetectionMode): string => {
+    if (mode === 'PURL_VERSION_SMART') {
+      return 'Primary match mode: exact PURL+version when available, fallback to prefix for unknown versions.';
+    }
+    return 'Prediction mode: prefix/base PURL matching for broader suspicious-package coverage.';
+  };
   readonly canManageDedupRules = computed(() => this.projectContext.canWrite());
 
   readonly dedupRulesStatus = signal<LoadState>('idle');
@@ -368,6 +446,10 @@ export class SecurityAlertsComponent {
   readonly jiraBindingDirty = computed(() => this.jiraDedupRuleBinding() !== this.jiraDedupRuleBindingSaved());
 
   constructor() {
+    this.route.queryParamMap
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => this.applyFilterStateFromUrl(params));
+
     // Reload everything when project changes.
     let lastProjectId: string | null = null;
     effect(() => {
@@ -378,7 +460,44 @@ export class SecurityAlertsComponent {
       lastProjectId = pid;
       this.resetToDefaults();
       // Tables are refreshed by query-driven effects above; here we only refresh config panels.
-      void Promise.all([this.refreshDedupRules(true), this.refreshJiraConnector(true)]);
+      void Promise.all([this.refreshDetectionModes(true), this.refreshDedupRules(true), this.refreshJiraConnector(true)]);
+    });
+
+    // Sync backend group status query with status multi-select filter.
+    effect(() => {
+      const mode = this.groupsFilterMode().status;
+      const selectedStatuses = this.groupsMultiFilters().status;
+      const nextStatus: NonNullable<AlertGroupsListQuery['status']> =
+        mode === 'select'
+          ? this.mapGroupStatusSelectionToBackendQuery(selectedStatuses)
+          : ['OPEN'];
+
+      const current = this.groupsAppliedQuery();
+      const currentStatus = this.normalizeGroupBackendStatusFilters(current.status);
+      if (this.groupStatusFiltersEqual(currentStatus, nextStatus)) {
+        return;
+      }
+
+      this.groupsAppliedQuery.set({
+        ...current,
+        page: 1,
+        status: nextStatus
+      });
+      this.groupsPageIndex.set(0);
+    });
+
+    // Keep advanced filter state mirrored in URL query params.
+    effect(() => {
+      this.groupsFilterMode();
+      this.groupsColumnFilters();
+      this.groupsMultiFilters();
+      this.occurrencesFilterMode();
+      this.occurrencesColumnFilters();
+      this.occurrencesMultiFilters();
+      if (this.applyingUrlFilters) {
+        return;
+      }
+      this.syncFilterStateToUrl();
     });
 
     // Fetch groups when applied query or pagination changes.
@@ -431,6 +550,7 @@ export class SecurityAlertsComponent {
       await Promise.all([
         this.refreshAlertsTable('groups', forceSpinner),
         this.refreshAlertsTable('occurrences', forceSpinner),
+        this.refreshDetectionModes(forceSpinner),
         this.refreshDedupRules(forceSpinner),
         this.refreshJiraConnector(forceSpinner)
       ]);
@@ -438,6 +558,74 @@ export class SecurityAlertsComponent {
       if (!forceSpinner) {
         this.silentRefreshInFlight = false;
       }
+    }
+  }
+
+  async refreshDetectionModes(forceSpinner: boolean): Promise<void> {
+    const hadLoaded = untracked(() => this.detectionModesStatus()) === 'loaded';
+    if (forceSpinner || !hadLoaded) {
+      this.detectionModesStatus.set('loading');
+      this.detectionModesError.set(null);
+    }
+    try {
+      const items = await this.api.listAlertDetectionModes();
+      const normalized = this.normalizeDetectionModes(items ?? []);
+      this.detectionModes.set(normalized);
+      this.detectionModesSavedSnapshot.set(normalized);
+      this.detectionModesStatus.set('loaded');
+    } catch (error) {
+      if (!forceSpinner && hadLoaded) {
+        return;
+      }
+      this.errorHandler.handleError(error);
+      this.detectionModesStatus.set('error');
+      this.detectionModesError.set('Failed to load alert detection modes.');
+    }
+  }
+
+  setDetectionModeEnabled(mode: AlertDetectionMode, enabled: boolean): void {
+    if (!this.canManageDetectionModes()) {
+      return;
+    }
+    this.detectionModes.update((items) =>
+      items.map((item) => (item.mode === mode ? { ...item, enabled } : item))
+    );
+  }
+
+  setDetectionModeSeverity(mode: AlertDetectionMode, value: string): void {
+    if (!this.canManageDetectionModes()) {
+      return;
+    }
+    const severity = this.normalizeDetectionModeSeverity(value);
+    this.detectionModes.update((items) =>
+      items.map((item) => (item.mode === mode ? { ...item, severity } : item))
+    );
+  }
+
+  async saveDetectionModes(): Promise<void> {
+    if (!this.canManageDetectionModes() || this.detectionModesSaving() || !this.detectionModesDirty()) {
+      return;
+    }
+    this.detectionModesSaving.set(true);
+    this.detectionModesError.set(null);
+    try {
+      const payload: PutAlertDetectionModesRequest = {
+        modes: this.detectionModes().map((item) => ({
+          mode: item.mode,
+          enabled: item.enabled,
+          severity: item.severity
+        }))
+      };
+      const saved = await this.api.putAlertDetectionModes(payload);
+      const normalized = this.normalizeDetectionModes(saved ?? []);
+      this.detectionModes.set(normalized);
+      this.detectionModesSavedSnapshot.set(normalized);
+      await this.refreshAlertsTable('groups', true);
+    } catch (error) {
+      this.errorHandler.handleError(error);
+      this.detectionModesError.set('Failed to save alert detection modes.');
+    } finally {
+      this.detectionModesSaving.set(false);
     }
   }
 
@@ -642,6 +830,374 @@ export class SecurityAlertsComponent {
     return scope;
   }
 
+  private normalizeDetectionModes(items: AlertDetectionModeState[]): AlertDetectionModeFormState[] {
+    const defaults = new Map<AlertDetectionMode, AlertDetectionModeFormState>([
+      [
+        'PURL_VERSION_SMART',
+        {
+          mode: 'PURL_VERSION_SMART',
+          enabled: true,
+          severity: 'ERROR'
+        }
+      ],
+      [
+        'PURL_CONTAINS_PREFIX',
+        {
+          mode: 'PURL_CONTAINS_PREFIX',
+          enabled: false,
+          severity: 'WARNING'
+        }
+      ]
+    ]);
+
+    for (const raw of items) {
+      const mode = (raw?.mode ?? '').trim().toUpperCase();
+      if (!this.isDetectionMode(mode)) {
+        continue;
+      }
+      defaults.set(mode, {
+        mode,
+        enabled: !!raw.enabled,
+        severity: this.normalizeDetectionModeSeverity(raw.severity)
+      });
+    }
+
+    return DETECTION_MODE_ORDER.map((mode) => defaults.get(mode)!).map((item) => ({ ...item }));
+  }
+
+  private isDetectionMode(value: string): value is AlertDetectionMode {
+    return value === 'PURL_VERSION_SMART' || value === 'PURL_CONTAINS_PREFIX';
+  }
+
+  private normalizeDetectionModeSeverity(value: string): AlertMinSeverity {
+    const normalized = (value ?? '').trim().toUpperCase();
+    if (normalized === 'ERROR') {
+      return 'ERROR';
+    }
+    if (normalized === 'WARN' || normalized === 'WARNING') {
+      return 'WARNING';
+    }
+    return 'INFO';
+  }
+
+  private serializeDetectionModes(items: AlertDetectionModeFormState[]): string {
+    return [...items]
+      .sort((left, right) => this.detectionModeSortRank(left.mode) - this.detectionModeSortRank(right.mode))
+      .map((item) => `${item.mode}:${item.enabled ? '1' : '0'}:${item.severity}`)
+      .join('|');
+  }
+
+  private detectionModeSortRank(mode: AlertDetectionMode): number {
+    if (mode === 'PURL_VERSION_SMART') {
+      return 1;
+    }
+    if (mode === 'PURL_CONTAINS_PREFIX') {
+      return 2;
+    }
+    return 100;
+  }
+
+  private normalizeGroupStatusSelection(values: readonly string[] | undefined): Array<(typeof GROUP_STATUS_UI_VALUES)[number]> {
+    const normalized: Array<(typeof GROUP_STATUS_UI_VALUES)[number]> = [];
+    for (const item of values ?? []) {
+      let value = (item ?? '').trim().toUpperCase();
+      if (value === 'ACKNOWLEDGED') {
+        value = 'CLOSED';
+      }
+      if (!GROUP_STATUS_UI_SET.has(value)) {
+        continue;
+      }
+      const status = value as (typeof GROUP_STATUS_UI_VALUES)[number];
+      if (!normalized.includes(status)) {
+        normalized.push(status);
+      }
+    }
+    return normalized;
+  }
+
+  private normalizeGroupBackendStatusFilters(
+    values: readonly string[] | undefined
+  ): NonNullable<AlertGroupsListQuery['status']> {
+    const normalized: NonNullable<AlertGroupsListQuery['status']> = [];
+    for (const item of values ?? []) {
+      const value = (item ?? '').trim().toUpperCase();
+      if (!GROUP_STATUS_BACKEND_SET.has(value)) {
+        continue;
+      }
+      const status = value as NonNullable<AlertGroupsListQuery['status']>[number];
+      if (!normalized.includes(status)) {
+        normalized.push(status);
+      }
+    }
+    return normalized;
+  }
+
+  private mapGroupStatusSelectionToBackendQuery(
+    values: readonly string[] | undefined
+  ): NonNullable<AlertGroupsListQuery['status']> {
+    const selected = this.normalizeGroupStatusSelection(values);
+    if (selected.length === 0) {
+      return ['OPEN'];
+    }
+
+    const mapped: NonNullable<AlertGroupsListQuery['status']> = [];
+    if (selected.includes('OPEN')) {
+      mapped.push('OPEN');
+    }
+    if (selected.includes('CLOSED')) {
+      // Backward compatibility: historical ACKNOWLEDGED rows are grouped under CLOSED view.
+      mapped.push('CLOSED', 'ACKNOWLEDGED');
+    }
+    return mapped;
+  }
+
+  private groupStatusFiltersEqual(
+    left: readonly string[] | undefined,
+    right: readonly string[] | undefined
+  ): boolean {
+    const leftNorm = this.normalizeGroupBackendStatusFilters(left);
+    const rightNorm = this.normalizeGroupBackendStatusFilters(right);
+    if (leftNorm.length !== rightNorm.length) {
+      return false;
+    }
+    return leftNorm.every((value) => rightNorm.includes(value));
+  }
+
+  private isDefaultGroupStatusSelection(values: readonly string[]): boolean {
+    return values.length === 1 && values[0] === 'OPEN';
+  }
+
+  private normalizeSelectValues(values: readonly string[] | undefined): string[] {
+    const normalized: string[] = [];
+    for (const item of values ?? []) {
+      const value = (item ?? '').trim();
+      if (!value || normalized.includes(value)) {
+        continue;
+      }
+      normalized.push(value);
+    }
+    return normalized;
+  }
+
+  private normalizeSelectValuesForGroupKey(key: GroupColumnKey, values: readonly string[] | undefined): string[] {
+    if (key === 'status') {
+      return this.normalizeGroupStatusSelection(values);
+    }
+    return this.normalizeSelectValues(values);
+  }
+
+  private applyFilterStateFromUrl(params: ParamMap): void {
+    this.applyingUrlFilters = true;
+    try {
+      this.applyGroupsFilterStateFromUrl(params);
+      this.applyOccurrencesFilterStateFromUrl(params);
+    } finally {
+      this.applyingUrlFilters = false;
+    }
+  }
+
+  private applyGroupsFilterStateFromUrl(params: ParamMap): void {
+    const parsed = readExtendedFilterQueryParams<GroupColumnKey>(params, {
+      tableId: ALERTS_GROUPS_TABLE_ID,
+      keys: GROUP_COLUMN_KEYS
+    });
+
+    const nextMode = buildDefaultGroupFilterModeRecord();
+    const nextValues = buildStringRecord(GROUP_COLUMN_KEYS);
+    const nextMulti = buildDefaultGroupMultiFilterRecord();
+    const nextVisible = buildBooleanRecord(GROUP_COLUMN_KEYS);
+
+    for (const key of GROUP_COLUMN_KEYS) {
+      const parsedMode = parsed.mode[key];
+      if (key === 'status') {
+        const sourceValues =
+          parsedMode === 'select'
+            ? parsed.values.status
+            : (parsed.value.status ?? '').trim()
+              ? [parsed.value.status ?? '']
+              : [];
+        const statusSelection = this.normalizeSelectValuesForGroupKey('status', sourceValues);
+        nextMode.status = 'select';
+        nextMulti.status = statusSelection.length > 0 ? statusSelection : ['OPEN'];
+        nextVisible.status = !this.isDefaultGroupStatusSelection(nextMulti.status);
+        continue;
+      }
+
+      if (parsedMode === 'select') {
+        const selected = this.normalizeSelectValuesForGroupKey(key, parsed.values[key]);
+        nextMode[key] = 'select';
+        nextMulti[key] = selected;
+        nextVisible[key] = selected.length > 0;
+        continue;
+      }
+
+      if (parsedMode === 'contains') {
+        const value = (parsed.value[key] ?? '').trim();
+        nextMode[key] = 'contains';
+        nextValues[key] = value;
+        nextVisible[key] = value !== '';
+      }
+    }
+
+    this.groupsFilterMode.set(nextMode);
+    this.groupsColumnFilters.set(nextValues);
+    this.groupsMultiFilters.set(nextMulti);
+    this.groupsFilterVisible.set(nextVisible);
+    this.groupsFilterPanelOpen.set(parsed.hasAny);
+  }
+
+  private applyOccurrencesFilterStateFromUrl(params: ParamMap): void {
+    const parsed = readExtendedFilterQueryParams<OccurrenceColumnKey>(params, {
+      tableId: ALERTS_OCCURRENCES_TABLE_ID,
+      keys: OCCURRENCE_COLUMN_KEYS
+    });
+
+    const nextMode = buildModeRecord(OCCURRENCE_COLUMN_KEYS, 'contains');
+    const nextValues = buildStringRecord(OCCURRENCE_COLUMN_KEYS);
+    const nextMulti = buildMultiRecord(OCCURRENCE_COLUMN_KEYS);
+    const nextVisible = buildBooleanRecord(OCCURRENCE_COLUMN_KEYS);
+
+    for (const key of OCCURRENCE_COLUMN_KEYS) {
+      const parsedMode = parsed.mode[key];
+      if (parsedMode === 'select') {
+        const selected = this.normalizeSelectValues(parsed.values[key]);
+        nextMode[key] = 'select';
+        nextMulti[key] = selected;
+        nextVisible[key] = selected.length > 0;
+        continue;
+      }
+      if (parsedMode === 'contains') {
+        const value = (parsed.value[key] ?? '').trim();
+        nextMode[key] = 'contains';
+        nextValues[key] = value;
+        nextVisible[key] = value !== '';
+      }
+    }
+
+    this.occurrencesFilterMode.set(nextMode);
+    this.occurrencesColumnFilters.set(nextValues);
+    this.occurrencesMultiFilters.set(nextMulti);
+    this.occurrencesFilterVisible.set(nextVisible);
+    this.occurrencesFilterPanelOpen.set(parsed.hasAny);
+  }
+
+  private syncFilterStateToUrl(): void {
+    const current = this.route.snapshot.queryParams as Record<string, unknown>;
+    const next: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(current)) {
+      if (this.isAlertsFilterQueryParam(key)) {
+        continue;
+      }
+      next[key] = value;
+    }
+
+    const groupsQuery = this.buildGroupRoutingFilterQuery();
+    const occurrencesQuery = this.buildOccurrenceRoutingFilterQuery();
+    const combinedQuery = { ...groupsQuery, ...occurrencesQuery };
+    for (const [key, value] of Object.entries(combinedQuery)) {
+      if (typeof value !== 'string' || value.trim() === '') {
+        continue;
+      }
+      next[key] = value;
+    }
+
+    if (this.queryParamsSignature(current) === this.queryParamsSignature(next)) {
+      return;
+    }
+
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: next,
+      replaceUrl: true
+    });
+  }
+
+  private buildGroupRoutingFilterQuery(): Record<string, string | null> {
+    const mode = this.groupsFilterMode();
+    const values = this.groupsColumnFilters();
+    const selected = this.groupsMultiFilters();
+    const filters: Partial<Record<GroupColumnKey, { mode?: AdvancedFilterMode; value?: string; values?: string[] }>> = {};
+
+    for (const key of GROUP_COLUMN_KEYS) {
+      if (key === 'status') {
+        if (mode.status !== 'select') {
+          continue;
+        }
+        const normalizedStatusSelection = this.normalizeSelectValuesForGroupKey('status', selected.status);
+        if (normalizedStatusSelection.length === 0 || this.isDefaultGroupStatusSelection(normalizedStatusSelection)) {
+          continue;
+        }
+        filters.status = { mode: 'select', values: normalizedStatusSelection };
+        continue;
+      }
+
+      if (mode[key] === 'select') {
+        const selectedValues = this.normalizeSelectValuesForGroupKey(key, selected[key]);
+        if (selectedValues.length === 0) {
+          continue;
+        }
+        filters[key] = { mode: 'select', values: selectedValues };
+        continue;
+      }
+
+      const value = (values[key] ?? '').trim();
+      if (!value) {
+        continue;
+      }
+      filters[key] = { mode: 'contains', value };
+    }
+
+    return buildExtendedFilterQueryParams(ALERTS_GROUPS_TABLE_ID, filters);
+  }
+
+  private buildOccurrenceRoutingFilterQuery(): Record<string, string | null> {
+    const mode = this.occurrencesFilterMode();
+    const values = this.occurrencesColumnFilters();
+    const selected = this.occurrencesMultiFilters();
+    const filters: Partial<Record<OccurrenceColumnKey, { mode?: AdvancedFilterMode; value?: string; values?: string[] }>> = {};
+
+    for (const key of OCCURRENCE_COLUMN_KEYS) {
+      if (mode[key] === 'select') {
+        const selectedValues = this.normalizeSelectValues(selected[key]);
+        if (selectedValues.length === 0) {
+          continue;
+        }
+        filters[key] = { mode: 'select', values: selectedValues };
+        continue;
+      }
+      const value = (values[key] ?? '').trim();
+      if (!value) {
+        continue;
+      }
+      filters[key] = { mode: 'contains', value };
+    }
+
+    return buildExtendedFilterQueryParams(ALERTS_OCCURRENCES_TABLE_ID, filters);
+  }
+
+  private isAlertsFilterQueryParam(key: string): boolean {
+    const normalized = key.trim();
+    return normalized.startsWith('ef_alerts_groups_') || normalized.startsWith('ef_alerts_occurrences_');
+  }
+
+  private queryParamsSignature(params: Record<string, unknown>): string {
+    const keys = Object.keys(params).sort((left, right) => left.localeCompare(right));
+    return keys
+      .map((key) => `${key}=${this.queryParamValueSignature(params[key])}`)
+      .join('&');
+  }
+
+  private queryParamValueSignature(value: unknown): string {
+    if (Array.isArray(value)) {
+      return value.map((entry) => String(entry)).join(',');
+    }
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value);
+  }
+
   async saveJiraDedupBinding(): Promise<void> {
     if (!this.canManageJiraRouting() || this.jiraBindingSaving()) {
       return;
@@ -732,6 +1288,17 @@ export class SecurityAlertsComponent {
 
   clearFilters(kind: AlertsTableKind): void {
     clearTableFilters(this.getTableBindings(kind));
+    if (kind !== 'groups') {
+      return;
+    }
+    this.groupsFilterMode.update((state) => ({
+      ...state,
+      status: 'select'
+    }));
+    this.groupsMultiFilters.update((state) => ({
+      ...state,
+      status: ['OPEN']
+    }));
   }
 
   toggleFilter(kind: AlertsTableKind, payload: { key: string; event: Event }): void {
@@ -828,7 +1395,8 @@ export class SecurityAlertsComponent {
   // --------------------------
   // Templates helpers
   // --------------------------
-  readonly groupValueForTable = groupValueForTable;
+  readonly groupValueForTable = (row: AlertGroup, key: string): string =>
+    groupValueForTable(row, key, this.groupDetectionDataById());
   readonly occurrenceValueForTable = occurrenceValueForTable;
 
   readonly groupValueForExpandedDetails = (row: unknown, key: string): string =>
@@ -949,6 +1517,7 @@ export class SecurityAlertsComponent {
       selected: this.groupsMultiFilters(),
       sortColumn: this.groupsSortColumn(),
       sortDirection: this.groupsSortDir(),
+      groupDetectionDataById: this.groupDetectionDataById(),
     };
   }
 
@@ -966,16 +1535,24 @@ export class SecurityAlertsComponent {
     this.groupsAppliedQuery.set({
       page: 1,
       pageSize: this.groupsPageSize(),
-      severity: ['ERROR'],
       status: ['OPEN']
     });
     this.groupsPageIndex.set(0);
+    this.groupsFilterVisible.set(buildBooleanRecord(GROUP_COLUMN_KEYS));
+    this.groupsColumnFilters.set(buildStringRecord(GROUP_COLUMN_KEYS));
+    this.groupsFilterMode.set(buildDefaultGroupFilterModeRecord());
+    this.groupsMultiFilters.set(buildDefaultGroupMultiFilterRecord());
 
     this.occurrencesAppliedQuery.set({
       page: 1,
-      pageSize: this.occurrencesPageSize(),
-      severity: ['ERROR']
+      pageSize: this.occurrencesPageSize()
     });
     this.occurrencesPageIndex.set(0);
+
+    this.detectionModesStatus.set('idle');
+    this.detectionModesError.set(null);
+    this.detectionModes.set([]);
+    this.detectionModesSavedSnapshot.set([]);
+    this.detectionModesSaving.set(false);
   }
 }

@@ -20,7 +20,7 @@ backend:
 
   image:
     repository: docker.io/cybergabisoft/ctwall-backend
-    tag: "1.1.0"
+    tag: "1.2.0"
     pullPolicy: IfNotPresent
 
   # Set to false to use external PostgreSQL.
@@ -41,15 +41,19 @@ frontend:
 
   image:
     repository: docker.io/cybergabisoft/ctwall-frontend
-    tag: "1.1.0"
+    tag: "1.2.0"
     pullPolicy: IfNotPresent
 
   env:
     BACKEND_UPSTREAM: "http://{{ .Release.Name }}-backend:8080"
-    # Helm deploys TLS via Kubernetes Secret; runtime cert auto-generation in pod should stay disabled.
-    FRONTEND_SSL_AUTO_GENERATE: "false"
+    # Default for local/dev clusters: generate self-signed cert in pod when no TLS Secret is provided.
+    FRONTEND_SSL_AUTO_GENERATE: "true"
     # Keep nginx upload limit aligned with backend ingest (50 MiB).
     FRONTEND_CLIENT_MAX_BODY_SIZE: "50m"
+
+  tls:
+    # Optional pre-created TLS Secret. Empty means frontend will self-generate certs at startup.
+    existingSecret: ""
 
   ingress:
     enabled: false

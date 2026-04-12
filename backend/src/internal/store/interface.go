@@ -75,6 +75,8 @@ type Store interface {
 	ListAlertDedupRules(projectID uuid.UUID, alertType string) ([]models.AlertDedupRule, error)
 	GetAlertDedupRuleByID(projectID, ruleID uuid.UUID) (*models.AlertDedupRule, error)
 	ReplaceAlertDedupRules(projectID uuid.UUID, alertType string, rules []AlertDedupRuleInput) ([]models.AlertDedupRule, error)
+	ListAlertDetectionModes(projectID uuid.UUID) ([]models.AlertDetectionMode, error)
+	ReplaceAlertDetectionModes(projectID uuid.UUID, inputs []AlertDetectionModeInput) ([]models.AlertDetectionMode, error)
 	ResolveAlertDedupRule(input AlertDedupRuleResolutionInput) (*models.AlertDedupRule, error)
 	GetJiraEntitySettings(projectID uuid.UUID, configLevel JiraConfigLevel, configTargetID uuid.UUID) (*JiraEntitySettings, error)
 	UpsertJiraEntitySettings(input JiraEntitySettingsUpsertInput) (*JiraEntitySettings, error)

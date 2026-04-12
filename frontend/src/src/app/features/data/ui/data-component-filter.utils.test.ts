@@ -17,6 +17,7 @@ const baseState: DataComponentFilterState = {
     publisher: '',
     supplier: '',
     malwareVerdict: '',
+    detectionData: '',
     malwareTriageStatus: '',
     malwareScannedAt: '',
     malwareValidUntil: ''
@@ -32,6 +33,7 @@ const baseState: DataComponentFilterState = {
     publisher: 'contains',
     supplier: 'contains',
     malwareVerdict: 'contains',
+    detectionData: 'contains',
     malwareTriageStatus: 'contains',
     malwareScannedAt: 'contains',
     malwareValidUntil: 'contains'
@@ -73,7 +75,7 @@ describe('data-component-filter.utils', () => {
     };
 
     const rows = [row('alpha-core'), row('beta-core')];
-    const result = filterComponentRows(rows, state, () => null);
+    const result = filterComponentRows(rows, state, () => null, () => '');
     expect(result.map((item) => item.pkgName)).toEqual(['alpha-core']);
   });
 
@@ -93,7 +95,7 @@ describe('data-component-filter.utils', () => {
       row('alpha', { licenses: ['MIT'] }),
       row('beta', { licenses: ['GPL-3.0'] })
     ];
-    const result = filterComponentRows(rows, state, () => null);
+    const result = filterComponentRows(rows, state, () => null, () => '');
     expect(result.map((item) => item.pkgName)).toEqual(['beta']);
   });
 
@@ -106,13 +108,39 @@ describe('data-component-filter.utils', () => {
       }
     };
     const rows = [row('alpha'), row('beta')];
-    const result = filterComponentRows(rows, state, (purl) => ({
-      id: `res-${purl}`,
-      componentPurl: purl,
-      verdict: purl.includes('alpha') ? 'MALWARE' : 'CLEAN',
-      scannedAt: null,
-      validUntil: null
-    }));
+    const result = filterComponentRows(
+      rows,
+      state,
+      (purl) => ({
+        id: `res-${purl}`,
+        componentPurl: purl,
+        verdict: purl.includes('alpha') ? 'MALWARE' : 'CLEAN',
+        scannedAt: null,
+        validUntil: null
+      }),
+      () => ''
+    );
+    expect(result.map((item) => item.pkgName)).toEqual(['alpha']);
+  });
+
+  it('filters by detection data field', () => {
+    const state: DataComponentFilterState = {
+      ...baseState,
+      filters: {
+        ...baseState.filters,
+        detectionData: 'pkg:npm/malicious@9.9.9'
+      }
+    };
+    const rows = [row('alpha'), row('beta')];
+    const result = filterComponentRows(
+      rows,
+      state,
+      () => null,
+      (purl) =>
+        purl.includes('alpha')
+          ? 'pkg:npm/test/alpha@1.0.0 -> pkg:npm/malicious@9.9.9 (EXACT)'
+          : 'pkg:npm/test/beta@1.0.0 -> pkg:npm/clean@1.0.0'
+    );
     expect(result.map((item) => item.pkgName)).toEqual(['alpha']);
   });
 });

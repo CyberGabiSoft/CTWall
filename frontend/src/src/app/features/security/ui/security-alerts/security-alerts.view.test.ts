@@ -17,7 +17,7 @@ function createGroup(overrides: Partial<AlertGroup> = {}): AlertGroup {
     category: 'malware',
     type: 'malware.detected',
     status: 'OPEN',
-    groupKey: 'dedup_on:test|test_id:test-1',
+    groupKey: 'dedup_on:test|test_id:test-1|detect_mode:purl_version_smart|malware_purl:pkg:npm/bad@1.2.3',
     title: 'Malware detected',
     entityRef: 'pkg:npm/component@1.0.0',
     occurrences: 2,
@@ -43,7 +43,7 @@ function createOccurrence(overrides: Partial<AlertOccurrence> = {}): AlertOccurr
     scopeId: 'scope-1',
     testId: 'test-1',
     entityRef: 'pkg:npm/component@1.0.0',
-    details: {},
+    details: { matchType: 'CONTAINS_PREFIX' },
     createdAt: '2026-03-17T12:00:00Z',
     ...overrides,
   };
@@ -53,12 +53,15 @@ describe('security-alerts.view', () => {
   it('builds group options and advanced fields', () => {
     const options = buildGroupFilterOptions([createGroup()]);
     expect(options.severity).toEqual(['ERROR']);
+    expect(options.status).toEqual(['CLOSED', 'OPEN']);
     const fields = buildGroupAdvancedFields(
       {
         severity: 'contains',
         status: 'contains',
         category: 'contains',
         type: 'contains',
+        detectionMode: 'contains',
+        detectionData: 'contains',
         dedupRule: 'contains',
         title: 'contains',
         occurrences: 'contains',
@@ -72,6 +75,8 @@ describe('security-alerts.view', () => {
         status: '',
         category: '',
         type: '',
+        detectionMode: '',
+        detectionData: '',
         dedupRule: '',
         title: '',
         occurrences: '',
@@ -85,6 +90,8 @@ describe('security-alerts.view', () => {
         status: [],
         category: [],
         type: [],
+        detectionMode: [],
+        detectionData: [],
         dedupRule: [],
         title: [],
         occurrences: [],
@@ -96,7 +103,7 @@ describe('security-alerts.view', () => {
       options
     );
     expect(fields.find((field) => field.key === 'severity')?.label).toBe('Severity');
-    expect(fields).toHaveLength(11);
+    expect(fields).toHaveLength(13);
   });
 
   it('builds occurrence options and advanced fields', () => {
@@ -107,6 +114,8 @@ describe('security-alerts.view', () => {
         severity: 'contains',
         category: 'contains',
         type: 'contains',
+        detectionMode: 'contains',
+        detectionData: 'contains',
         title: 'contains',
         occurredAt: 'contains',
         entityRef: 'contains',
@@ -120,6 +129,8 @@ describe('security-alerts.view', () => {
         severity: '',
         category: '',
         type: '',
+        detectionMode: '',
+        detectionData: '',
         title: '',
         occurredAt: '',
         entityRef: '',
@@ -133,6 +144,8 @@ describe('security-alerts.view', () => {
         severity: [],
         category: [],
         type: [],
+        detectionMode: [],
+        detectionData: [],
         title: [],
         occurredAt: [],
         entityRef: [],
@@ -145,11 +158,16 @@ describe('security-alerts.view', () => {
       options
     );
     expect(fields.find((field) => field.key === 'groupId')?.label).toBe('Group ID');
-    expect(fields).toHaveLength(11);
+    expect(fields).toHaveLength(13);
   });
 
   it('returns safe table value for unknown keys', () => {
     expect(groupValueForTable(createGroup(), 'unknown')).toBe('-');
     expect(occurrenceValueForTable(createOccurrence(), 'unknown')).toBe('-');
+  });
+
+  it('resolves detail column values when detail columns are selected', () => {
+    expect(groupValueForTable(createGroup(), '__detail__:malware_purl')).toBe('pkg:npm/bad@1.2.3');
+    expect(occurrenceValueForTable(createOccurrence(), '__detail__:match_type')).toBe('CONTAINS_PREFIX');
   });
 });

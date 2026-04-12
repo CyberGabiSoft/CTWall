@@ -100,9 +100,9 @@
 }
 
 .status-pill--open {
-  background: var(--ctw-warning-soft);
-  color: var(--ctw-warning-text);
-  border: 1px solid color-mix(in srgb, var(--ctw-warning-text) 30%, transparent);
+  background: transparent;
+  color: var(--ctw-text);
+  border: 1px solid var(--ctw-border-subtle);
 }
 
 .status-pill--ack {
@@ -119,8 +119,40 @@
 
 .connectors-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+
+.detection-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.detection-mode-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(170px, 220px);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--ctw-border-subtle);
+  border-radius: 10px;
+  background: var(--ctw-surface-muted);
+}
+
+.detection-mode-meta p {
+  margin: 6px 0 0;
+  color: var(--ctw-muted);
+  font-size: 0.9rem;
+}
+
+.detection-mode-code {
+  font-weight: 700;
+}
+
+.detection-mode-severity {
+  min-width: 170px;
 }
 
 .connector-meta {
@@ -200,9 +232,18 @@
 
 @media (max-width: 1100px) {
   .connectors-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .connectors-grid {
     grid-template-columns: 1fr;
   }
   .routing-grid {
+    grid-template-columns: 1fr;
+  }
+  .detection-mode-row {
     grid-template-columns: 1fr;
   }
 }

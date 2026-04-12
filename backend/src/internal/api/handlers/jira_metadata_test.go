@@ -276,7 +276,20 @@ func TestGetJiraMetadataIssueTypesHandler_NotFoundReturnsEmpty200(t *testing.T) 
 	}
 
 	jiraSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/rest/api/3/project/KAN" && r.URL.Path != "/rest/api/2/project/KAN" {
+		switch r.URL.Path {
+		case "/rest/api/3/project/KAN",
+			"/rest/api/2/project/KAN",
+			"/rest/api/3/project/KAN/statuses",
+			"/rest/api/3/search/jql",
+			"/rest/api/3/search",
+			"/rest/api/3/issuetype",
+			"/rest/api/3/project/KAN/components",
+			"/rest/api/2/project/KAN/statuses",
+			"/rest/api/2/search/jql",
+			"/rest/api/2/search",
+			"/rest/api/2/issuetype",
+			"/rest/api/2/project/KAN/components":
+		default:
 			t.Fatalf("unexpected Jira metadata path: %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -341,7 +354,7 @@ func TestGetJiraMetadataIssuesHandler_Success(t *testing.T) {
 		if r.URL.Path != "/rest/api/3/search/jql" && r.URL.Path != "/rest/api/3/search" {
 			t.Fatalf("unexpected Jira metadata path: %s", r.URL.Path)
 		}
-		if got := r.URL.Query().Get("maxResults"); got != "50" {
+		if got := r.URL.Query().Get("maxResults"); got != "100" {
 			t.Fatalf("unexpected maxResults query: %s", got)
 		}
 		_, _ = w.Write([]byte(`{

@@ -131,6 +131,19 @@ func applyStartupMigrations(ctx context.Context, db *sql.DB, cfg startupMigratio
 
 		if existingChecksum, ok := applied[filename]; ok {
 			if !strings.EqualFold(strings.TrimSpace(existingChecksum), checksum) {
+				if shouldReconcile, reason := shouldReconcileAppliedMigrationChecksum(filename, state); shouldReconcile {
+					if err := markMigrationApplied(ctx, db, appliedMigration{Filename: filename, Checksum: checksum}); err != nil {
+						return err
+					}
+					slog.Warn(
+						"startup migration checksum reconciled",
+						"migration", filename,
+						"old_checksum", strings.TrimSpace(existingChecksum),
+						"new_checksum", checksum,
+						"reason", reason,
+					)
+					continue
+				}
 				return fmt.Errorf("migration %s checksum mismatch: applied=%s current=%s", filename, existingChecksum, checksum)
 			}
 			continue
@@ -260,6 +273,16 @@ func tableExistsByRegclass(ctx context.Context, db *sql.DB, regclass string) (bo
 func shouldSkipMigration(filename string, state existingSchemaState) (bool, string) {
 	if filename == "001_init_schema.up.sql" && state.productsTableExists {
 		return true, "schema already initialized (products table exists)"
+	}
+	return false, ""
+}
+
+func shouldReconcileAppliedMigrationChecksum(filename string, state existingSchemaState) (bool, string) {
+	// 001 acts as a mutable baseline snapshot for fresh databases only.
+	// On already initialized environments, allow checksum reconciliation so startup
+	// is not blocked when baseline SQL is cleaned up/refreshed.
+	if filename == "001_init_schema.up.sql" && state.productsTableExists {
+		return true, "baseline schema already initialized"
 	}
 	return false, ""
 }

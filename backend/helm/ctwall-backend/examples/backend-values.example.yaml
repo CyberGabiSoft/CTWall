@@ -6,7 +6,7 @@
 
 image:
   repository: docker.io/cybergabisoft/ctwall-backend
-  tag: 1.0.0
+  tag: 1.2.0
   pullPolicy: IfNotPresent
 
 replicaCount: 1
@@ -42,6 +42,12 @@ postgresql:
   persistence:
     enabled: false
 
+# Wait for PostgreSQL socket before running backend initializer.
+databaseWait:
+  enabled: true
+  timeoutSeconds: 600
+  pollIntervalSeconds: 2
+
 # Use chart-managed Secret for PostgreSQL password unless you provide existingSecret.
 secretEnv:
   create: true
@@ -51,4 +57,4 @@ secretEnv:
 alertmanager:
   image:
     repository: prom/alertmanager
-    tag: v0.28.1
+    tag: v0.32.0

@@ -80,6 +80,7 @@ func TestProcessJob_PURLVersionSmart_UsesTrivyFixture(t *testing.T) {
 		t.Fatalf("list findings versioned: %v", err)
 	}
 	assertFinding(t, findingsVersioned, "pkg:deb/debian/apt@2.6.1", store.ComponentAnalysisMatchExact)
+	assertNoFinding(t, findingsVersioned, "pkg:deb/debian/apt", store.ComponentAnalysisMatchContainsPrefix)
 
 	findingsNoVersion, err := memStore.ListComponentAnalysisFindings(componentNoVersion)
 	if err != nil {
@@ -130,6 +131,7 @@ func TestProcessJob_PURLVersionSmart_UsesOSVVersionsList(t *testing.T) {
 		t.Fatalf("list findings versioned: %v", err)
 	}
 	assertFinding(t, findingsVersioned, "pkg:deb/debian/apt@2.6.1", store.ComponentAnalysisMatchExact)
+	assertNoFinding(t, findingsVersioned, "pkg:deb/debian/apt", store.ComponentAnalysisMatchContainsPrefix)
 
 	componentOutsideOSVList := "pkg:deb/debian/apt@9.9.9"
 	if err := svc.processJob(context.Background(), componentOutsideOSVList); err != nil {
@@ -139,9 +141,12 @@ func TestProcessJob_PURLVersionSmart_UsesOSVVersionsList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list findings outside versions list: %v", err)
 	}
-	if len(findingsOutside) != 0 {
-		t.Fatalf("expected no findings for %q, got %#v", componentOutsideOSVList, findingsOutside)
+	for _, finding := range findingsOutside {
+		if finding.MatchType == store.ComponentAnalysisMatchExact {
+			t.Fatalf("expected no EXACT finding for %q, got %#v", componentOutsideOSVList, finding)
+		}
 	}
+	assertFinding(t, findingsOutside, "pkg:deb/debian/apt", store.ComponentAnalysisMatchContainsPrefix)
 }
 
 func parseTrivyFixture(t *testing.T) *sbom.Document {
@@ -244,4 +249,13 @@ func assertFinding(t *testing.T, findings []models.ComponentAnalysisFinding, mal
 		}
 	}
 	t.Fatalf("expected finding malware_purl=%q match_type=%q, got=%v", malwarePURL, matchType, findings)
+}
+
+func assertNoFinding(t *testing.T, findings []models.ComponentAnalysisFinding, malwarePURL, matchType string) {
+	t.Helper()
+	for _, finding := range findings {
+		if finding.MalwarePURL == malwarePURL && finding.MatchType == matchType {
+			t.Fatalf("unexpected finding malware_purl=%q match_type=%q, got=%v", malwarePURL, matchType, finding)
+		}
+	}
 }

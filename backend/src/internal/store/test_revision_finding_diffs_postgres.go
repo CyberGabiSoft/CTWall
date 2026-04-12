@@ -738,7 +738,12 @@ func (s *PostgresStore) applyRevisionFindingDiffSideEffects(
 			if err != nil {
 				return err
 			}
-			if _, err := s.CreateMalwareDetectedAlertOccurrences(entry.componentPURL, entry.malwarePURL); err != nil {
+			if _, err := s.CreateMalwareDetectedAlertOccurrences(
+				entry.componentPURL,
+				entry.malwarePURL,
+				AlertDetectionModePURLVersionSmart,
+				ComponentAnalysisMatchExact,
+			); err != nil {
 				return err
 			}
 			summaryNeedsRecompute = true

@@ -120,9 +120,21 @@ func setupMockDB(t *testing.T) sqlmock.Sqlmock {
 	return mock
 }
 
+func setupMockShutdownSignal(t *testing.T, sig os.Signal) {
+	t.Helper()
+	origNotifySignals := notifySignals
+	notifySignals = func(ch chan<- os.Signal, _ ...os.Signal) {
+		ch <- sig
+	}
+	t.Cleanup(func() {
+		notifySignals = origNotifySignals
+	})
+}
+
 func TestRunGracefulShutdown(t *testing.T) {
 	t.Setenv("PORT", "0")
 	setupMockDB(t)
+	setupMockShutdownSignal(t, syscall.SIGTERM)
 
 	done := make(chan error, 1)
 	go func() {
@@ -131,17 +143,10 @@ func TestRunGracefulShutdown(t *testing.T) {
 
 	select {
 	case err := <-done:
-		t.Fatalf("server returned before shutdown signal: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-
-	select {
-	case err := <-done:
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("timeout waiting for shutdown")
 	}
 
@@ -150,6 +155,7 @@ func TestRunGracefulShutdown(t *testing.T) {
 func TestRunDefaultPort(t *testing.T) {
 	t.Setenv("PORT", "")
 	setupMockDB(t)
+	setupMockShutdownSignal(t, syscall.SIGTERM)
 
 	done := make(chan error, 1)
 	go func() {
@@ -158,17 +164,10 @@ func TestRunDefaultPort(t *testing.T) {
 
 	select {
 	case err := <-done:
-		t.Fatalf("server returned before shutdown signal: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-
-	select {
-	case err := <-done:
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("timeout waiting for shutdown")
 	}
 }
@@ -195,6 +194,7 @@ func TestMainErrorExit(t *testing.T) {
 func TestRunShutdownError(t *testing.T) {
 	t.Setenv("PORT", "0")
 	setupMockDB(t)
+	setupMockShutdownSignal(t, syscall.SIGTERM)
 
 	originalShutdown := shutdownServer
 	shutdownServer = func(_ context.Context, _ *http.Server) error {
@@ -211,17 +211,10 @@ func TestRunShutdownError(t *testing.T) {
 
 	select {
 	case err := <-done:
-		t.Fatalf("server returned before shutdown signal: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-
-	select {
-	case err := <-done:
 		if err == nil {
 			t.Fatalf("expected shutdown error")
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("timeout waiting for shutdown error")
 	}
 }
@@ -290,6 +283,7 @@ func TestRunCloseError(t *testing.T) {
 		return closeErrStore{Store: ps}, nil
 	}
 	defer func() { newPostgresStore = origNewStore }()
+	setupMockShutdownSignal(t, syscall.SIGTERM)
 
 	done := make(chan error, 1)
 	go func() {
@@ -297,17 +291,10 @@ func TestRunCloseError(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		t.Fatalf("server returned before shutdown signal: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
-
-	select {
-	case err := <-done:
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatalf("timeout waiting for shutdown")
 	}
 

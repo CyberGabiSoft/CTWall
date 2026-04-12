@@ -181,7 +181,7 @@ export class DashboardComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    void this.store.ensureFresh();
+    void this.store.reload();
   }
 
   async onTopNChange(topN: number): Promise<void> {

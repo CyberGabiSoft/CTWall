@@ -164,3 +164,70 @@ type AlertDedupRuleResolutionInput struct {
 	ScopeID   *uuid.UUID
 	TestID    *uuid.UUID
 }
+
+type AlertDetectionMode string
+
+const (
+	AlertDetectionModePURLVersionSmart   AlertDetectionMode = "PURL_VERSION_SMART"
+	AlertDetectionModePURLContainsPrefix AlertDetectionMode = "PURL_CONTAINS_PREFIX"
+)
+
+func normalizeAlertDetectionMode(raw string) AlertDetectionMode {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case string(AlertDetectionModePURLVersionSmart):
+		return AlertDetectionModePURLVersionSmart
+	case string(AlertDetectionModePURLContainsPrefix):
+		return AlertDetectionModePURLContainsPrefix
+	default:
+		return AlertDetectionMode("")
+	}
+}
+
+func isValidAlertDetectionMode(raw string) bool {
+	return normalizeAlertDetectionMode(raw) != AlertDetectionMode("")
+}
+
+func alertDetectionModeKey(mode AlertDetectionMode) string {
+	switch normalizeAlertDetectionMode(string(mode)) {
+	case AlertDetectionModePURLVersionSmart:
+		return "purl_version_smart"
+	case AlertDetectionModePURLContainsPrefix:
+		return "purl_contains_prefix"
+	default:
+		return ""
+	}
+}
+
+type AlertDetectionModeInput struct {
+	Mode     AlertDetectionMode
+	Enabled  bool
+	Severity eventmeta.Severity
+}
+
+func normalizeAlertDetectionSeverity(raw string) eventmeta.Severity {
+	switch strings.ToUpper(strings.TrimSpace(raw)) {
+	case string(eventmeta.SeverityInfo):
+		return eventmeta.SeverityInfo
+	case string(eventmeta.SeverityWarn), "WARNING":
+		return eventmeta.SeverityWarn
+	case string(eventmeta.SeverityError):
+		return eventmeta.SeverityError
+	default:
+		return eventmeta.Severity("")
+	}
+}
+
+func defaultAlertDetectionModeInputs() []AlertDetectionModeInput {
+	return []AlertDetectionModeInput{
+		{
+			Mode:     AlertDetectionModePURLVersionSmart,
+			Enabled:  true,
+			Severity: eventmeta.SeverityError,
+		},
+		{
+			Mode:     AlertDetectionModePURLContainsPrefix,
+			Enabled:  false,
+			Severity: eventmeta.SeverityWarn,
+		},
+	}
+}

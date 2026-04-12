@@ -1,6 +1,33 @@
 name: ctwall
 
 services:
+  ctwall-config-bootstrap:
+    image: ${CTWALL_CONFIG_BOOTSTRAP_IMAGE:-busybox:1.37}
+    container_name: ctwall-config-bootstrap
+    restart: "no"
+    command:
+      - sh
+      - -ec
+      - |
+        mkdir -p /config
+        if [ -f /seed/config.yaml ]; then
+          cp /seed/config.yaml /config/config.yaml
+        fi
+        if [ -f /seed/alertmanager.yml ]; then
+          cp /seed/alertmanager.yml /config/alertmanager.yml
+        fi
+        [ -f /config/config.yaml ] || touch /config/config.yaml
+        [ -f /config/alertmanager.yml ] || touch /config/alertmanager.yml
+        chown 65532:65532 /config
+        chown 65532:65532 /config/config.yaml /config/alertmanager.yml
+        chmod 0755 /config
+        chmod 0644 /config/config.yaml /config/alertmanager.yml
+    volumes:
+      - ./deploy/docker/backend-config:/seed:ro
+      - ctwall-backend-config:/config
+    networks:
+      - ctwall
+
   ctwall-postgres:
     image: ${CTWALL_POSTGRES_IMAGE:-postgres:18}
     container_name: ctwall-postgres
@@ -24,20 +51,21 @@ services:
     image: ${CTWALL_ALERTMANAGER_IMAGE:-prom/alertmanager:v0.31.1}
     container_name: ctwall-alertmanager
     restart: unless-stopped
+    depends_on:
+      ctwall-config-bootstrap:
+        condition: service_completed_successfully
     command:
       - --config.file=/etc/alertmanager/alertmanager.yml
       - --storage.path=/alertmanager
       - --web.listen-address=0.0.0.0:9093
     volumes:
-      # Mount the whole directory (not a single file). Backend rewrites alertmanager.yml atomically,
-      # and file-level bind mounts can pin the old inode and miss updates.
-      - ./deploy/docker/backend-config:/etc/alertmanager:ro
+      - ctwall-backend-config:/etc/alertmanager:ro
       - ctwall-alertmanager-data:/alertmanager
     networks:
       - ctwall
 
   ctwall-initializer:
-    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.1.0}
+    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.2.0}
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
@@ -45,6 +73,8 @@ services:
     container_name: ctwall-initializer
     restart: "no"
     depends_on:
+      ctwall-config-bootstrap:
+        condition: service_completed_successfully
       ctwall-postgres:
         condition: service_healthy
     environment:
@@ -52,13 +82,13 @@ services:
       DB_URL: postgres://${POSTGRES_USER:-appuser}:${POSTGRES_PASSWORD:-change-me-postgres}@${POSTGRES_HOST:-ctwall-postgres}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-appdb}?sslmode=${POSTGRES_SSLMODE:-disable}
       CTWALL_SECRETS_PATH: /app/data/secrets.yaml
     volumes:
-      - ./deploy/docker/backend-config:/app/config
+      - ctwall-backend-config:/app/config
       - ctwall-backend-data:/app/data
     networks:
       - ctwall
 
   ctwall-backend:
-    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.1.0}
+    image: ${CTWALL_BACKEND_IMAGE:-cybergabisoft/ctwall-backend:1.2.0}
     build:
       context: ./backend
       dockerfile: docker/Dockerfile
@@ -66,6 +96,8 @@ services:
     container_name: ctwall-backend
     restart: unless-stopped
     depends_on:
+      ctwall-config-bootstrap:
+        condition: service_completed_successfully
       ctwall-initializer:
         condition: service_completed_successfully
       ctwall-postgres:
@@ -79,13 +111,13 @@ services:
       ALERTING_ALLOW_HTTP_TARGETS: ${ALERTING_ALLOW_HTTP_TARGETS:-false}
       ALERTING_ALLOW_LOCALHOST_TARGETS: ${ALERTING_ALLOW_LOCALHOST_TARGETS:-false}
     volumes:
-      - ./deploy/docker/backend-config:/app/config
+      - ctwall-backend-config:/app/config
       - ctwall-backend-data:/app/data
     networks:
       - ctwall
 
   ctwall-frontend:
-    image: ${CTWALL_FRONTEND_IMAGE:-cybergabisoft/ctwall-frontend:1.1.0}
+    image: ${CTWALL_FRONTEND_IMAGE:-cybergabisoft/ctwall-frontend:1.2.0}
     build:
       context: ./frontend
       dockerfile: docker/Dockerfile
@@ -109,6 +141,7 @@ services:
       - ctwall
 
 volumes:
+  ctwall-backend-config:
   ctwall-postgres-data:
   ctwall-alertmanager-data:
   ctwall-backend-data:

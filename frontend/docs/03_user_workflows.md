@@ -71,6 +71,7 @@ Rules:
 - KPIs and timelines for ingest/sync,
 - score `Safe products / total products`,
 - inventory/top breakdown,
+- full data reload is triggered when user enters the tab,
 - direct navigation to Explorer via `Open Explorer`.
 
 ## 7. Security -> Explorer
@@ -81,6 +82,7 @@ Scope:
 
 1. `Malware` (overview)
 - malware summary table per test,
+- table input is refreshed on each tab entry,
 - drill-down to test details.
 
 2. `Analysis` (`/security/explorer/runs`)
@@ -89,6 +91,9 @@ Scope:
 
 3. `Explorer details` (`/security/explorer/tests/:testId`)
 - detailed findings table,
+- when opened via `View details`, table is prefiltered to `malwareVerdict = MALWARE` (user can clear filters),
+- each finding row includes `Detection data` (`component -> malware`, with `match type` + `detection mode` metadata),
+- findings loading uses a single centered spinner in the table area when rows are not ready,
 - triage status/priority,
 - queue/context details,
 - `Analysis run history` in expanded finding rows is range-scoped to recent `X` days (default `7d`, selectable near the table).
@@ -105,6 +110,7 @@ Permissions:
 Scope:
 
 - source registry,
+- source registry data reloads on tab entry,
 - sync full/latest,
 - recompute source/summaries,
 - sync/recompute history,
@@ -122,20 +128,33 @@ Scope:
 
 1. `Alert groups`
 - deduplicated alert groups,
-- acknowledge/close actions,
+- includes `Detection mode` column (`purl_version_smart` / `purl_contains_prefix`),
+- includes `Detection data` column to show effective malware mapping context,
+- default status selection is `OPEN` (select mode); status filter can explicitly switch to `CLOSED` (legacy `ACKNOWLEDGED` rows are grouped under `CLOSED`),
+- extended filter selections are mirrored in URL query params (`ef_alerts_groups_*`),
+- malware status lifecycle is managed via Explorer triage/close flow,
 - `Show in Explorer` for malware groups.
+- table column reorder keeps header/value alignment, including detail columns added from expanded data.
 
 2. `All alerts`
-- append-only occurrence stream.
+- append-only occurrence stream,
+- extended filter selections are mirrored in URL query params (`ef_alerts_occurrences_*`),
+- includes `Detection mode` and `Detection data` in table, and `Match type` in expanded details.
 
-3. `Dedup rules`
+3. `Detection modes`
+- `purl_version_smart` and `purl_contains_prefix` can be enabled independently,
+- each mode has its own alert severity (`ERROR` / `WARNING` / `INFO`).
+- alerts table default fetch is not limited to `ERROR` anymore (WARN/INFO are visible by default).
+
+4. `Dedup rules`
 - deduplication policy configuration.
 
-4. `Jira routing`
+5. `Jira routing`
 - binding of routing rule to connector profile.
 
 Permissions:
 
+- detection modes: project `WRITER+`,
 - dedup rules: project `WRITER+`,
 - JIRA routing: project `ADMIN`,
 - acknowledge/close: project `ADMIN`.

@@ -283,7 +283,13 @@ SET status = 'CLOSED',
 WHERE ag.project_id = $1
   AND ag.type = 'malware.detected'
   AND ag.status = 'OPEN'
-  AND NOT EXISTS (
+  AND (
+    position('|detect_mode:' in ag.group_key) = 0
+    OR (
+      position('|detect_mode:purl_version_smart|' in ag.group_key) > 0
+      AND position('@' in split_part(ag.group_key, '|malware_purl:', 2)) = 0
+    )
+    OR NOT EXISTS (
     SELECT 1
     FROM test_revisions tr
     JOIN tests t ON t.id = tr.test_id
@@ -327,6 +333,7 @@ WHERE ag.project_id = $1
           AND position('|dedup_on:product|' in ag.group_key) = 0
         )
       )
+  )
   )
 RETURNING ag.id
 `, projectID, now)
@@ -701,6 +708,7 @@ INSERT INTO alert_groups (
 VALUES ($1, $2, $3, $4, 'OPEN', $5, $6, $7, 1, $8, $8, $8, $8)
 ON CONFLICT (project_id, group_key) DO UPDATE
 SET occurrences = alert_groups.occurrences + 1,
+    severity = EXCLUDED.severity,
     last_seen_at = EXCLUDED.last_seen_at,
     updated_at = EXCLUDED.updated_at,
     -- Re-open when new occurrence arrives after ack/close.

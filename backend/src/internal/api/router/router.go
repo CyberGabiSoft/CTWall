@@ -148,6 +148,8 @@ func buildRouteSpecs(memStore store.Store, cfg Config) []routeSpec {
 		{pattern: "GET /api/v1/alert-occurrences", component: "handler.alert_occurrences.list", handler: handlers.ListAlertOccurrencesHandler(memStore), roles: allRoles},
 		{pattern: "GET /api/v1/alerting/connectors", component: "handler.alerting.connectors.get", handler: handlers.GetAlertingConnectorsHandler(memStore), roles: allRoles},
 		{pattern: "PUT /api/v1/alerting/connectors/{type}", component: "handler.alerting.connectors.upsert", handler: handlers.UpsertAlertingConnectorHandler(memStore, cfg.AuditWriter), roles: allRoles, requireJSON: true},
+		{pattern: "GET /api/v1/alerting/detection-modes", component: "handler.alerting.detection_modes.list", handler: handlers.ListAlertDetectionModesHandler(memStore), roles: allRoles},
+		{pattern: "PUT /api/v1/alerting/detection-modes", component: "handler.alerting.detection_modes.put", handler: handlers.PutAlertDetectionModesHandler(memStore, cfg.AuditWriter), roles: allRoles, requireJSON: true},
 		{pattern: "GET /api/v1/alerting/dedup-rules", component: "handler.alerting.dedup_rules.list", handler: handlers.ListAlertDedupRulesHandler(memStore), roles: allRoles},
 		{pattern: "PUT /api/v1/alerting/dedup-rules", component: "handler.alerting.dedup_rules.put", handler: handlers.PutAlertDedupRulesHandler(memStore, cfg.AuditWriter), roles: allRoles, requireJSON: true},
 		{pattern: "GET /api/v1/data/jira/metadata/projects", component: "handler.jira.metadata.projects", handler: handlers.GetJiraMetadataProjectsHandler(memStore), roles: allRoles},

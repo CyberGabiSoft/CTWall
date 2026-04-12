@@ -50,6 +50,10 @@ import {
 } from './data-component-filter.utils';
 import { mapSetValue } from '../../../shared/utils/map-utils';
 import {
+  formatDetectionData,
+  inferDetectionModeFromMatchType
+} from '../../../shared/utils/malware-detection-data';
+import {
   addOption,
   anyFilterValue,
   anyFilterVisible,
@@ -498,6 +502,7 @@ export abstract class DataFacade {
     publisher: string;
     supplier: string;
     malwareVerdict: string;
+    detectionData: string;
     malwareTriageStatus: string;
     malwareScannedAt: string;
     malwareValidUntil: string;
@@ -512,6 +517,7 @@ export abstract class DataFacade {
     publisher: '',
     supplier: '',
     malwareVerdict: '',
+    detectionData: '',
     malwareTriageStatus: '',
     malwareScannedAt: '',
     malwareValidUntil: ''
@@ -527,6 +533,7 @@ export abstract class DataFacade {
     publisher: 'contains' | 'select';
     supplier: 'contains' | 'select';
     malwareVerdict: 'contains' | 'select';
+    detectionData: 'contains' | 'select';
     malwareTriageStatus: 'contains' | 'select';
     malwareScannedAt: 'contains' | 'select';
     malwareValidUntil: 'contains' | 'select';
@@ -541,6 +548,7 @@ export abstract class DataFacade {
     publisher: 'contains',
     supplier: 'contains',
     malwareVerdict: 'contains',
+    detectionData: 'contains',
     malwareTriageStatus: 'contains',
     malwareScannedAt: 'contains',
     malwareValidUntil: 'contains'
@@ -649,6 +657,7 @@ export abstract class DataFacade {
     publisher: boolean;
     supplier: boolean;
     malwareVerdict: boolean;
+    detectionData: boolean;
     malwareTriageStatus: boolean;
     malwareScannedAt: boolean;
     malwareValidUntil: boolean;
@@ -663,6 +672,7 @@ export abstract class DataFacade {
     publisher: false,
     supplier: false,
     malwareVerdict: false,
+    detectionData: false,
     malwareTriageStatus: false,
     malwareScannedAt: false,
     malwareValidUntil: false
@@ -681,6 +691,7 @@ export abstract class DataFacade {
       sbomType: new Set<string>(),
       publisher: new Set<string>(),
       supplier: new Set<string>(),
+      detectionData: new Set<string>(),
       malwareTriageStatus: new Set<string>()
     };
     for (const row of rows.slice(0, 500)) {
@@ -702,6 +713,10 @@ export abstract class DataFacade {
       if (row.malwareTriageStatus) {
         options.malwareTriageStatus.add(row.malwareTriageStatus);
       }
+      addOption(
+        options.detectionData,
+        this.getComponentDetectionData((row.purl ?? '').trim())
+      );
       for (const license of extractLicenseValues(row.licenses)) {
         options.licenses.add(license);
       }
@@ -713,6 +728,7 @@ export abstract class DataFacade {
       sbomType: Array.from(options.sbomType).sort(),
       publisher: Array.from(options.publisher).sort(),
       supplier: Array.from(options.supplier).sort(),
+      detectionData: Array.from(options.detectionData).sort(),
       malwareTriageStatus: Array.from(options.malwareTriageStatus).sort()
     };
   });
@@ -721,6 +737,7 @@ export abstract class DataFacade {
   private readonly componentMalwareResults = signal<Map<string, MalwareResultSummary | null>>(new Map());
   private readonly componentMalwareStatus = signal<Map<string, LoadState>>(new Map());
   private readonly componentMalwareMappings = signal<Map<string, string[]>>(new Map());
+  private readonly componentMalwareDetectionData = signal<Map<string, string>>(new Map());
   private readonly componentMalwareHydrationInFlight = new Map<string, Promise<void>>();
   private readonly componentMalwareHydrationSignatureByTest = new Map<string, string>();
 
@@ -1145,6 +1162,8 @@ export abstract class DataFacade {
             return row.supplier ?? '';
           case 'malwareVerdict':
             return this.getComponentMalwareResult(row.purl ?? '')?.verdict ?? '';
+          case 'detectionData':
+            return this.getComponentDetectionData(row.purl ?? '');
           case 'malwareTriageStatus':
             return row.malwareTriageStatus ?? '';
           case 'malwareScannedAt':
@@ -2281,6 +2300,22 @@ export abstract class DataFacade {
     return this.componentMalwareMappings().get(componentPurl) ?? [];
   }
 
+  getComponentDetectionData(componentPurl: string): string {
+    const normalized = (componentPurl ?? '').trim();
+    if (!normalized) {
+      return '-';
+    }
+    const value = (this.componentMalwareDetectionData().get(normalized) ?? '').trim();
+    if (value) {
+      return value;
+    }
+    const purls = this.getComponentMalwarePurls(normalized);
+    if (purls.length === 0) {
+      return '-';
+    }
+    return purls.map((malwarePurl) => `${normalized} -> ${malwarePurl}`).join(' | ');
+  }
+
   componentMalwareTooltip(componentPurl: string | null | undefined): string {
     const purl = (componentPurl ?? '').trim();
     if (!purl) {
@@ -2372,6 +2407,7 @@ export abstract class DataFacade {
       const nextMappings = new Map(this.componentMalwareMappings());
       const nextResults = new Map(this.componentMalwareResults());
       const nextStatuses = new Map(this.componentMalwareStatus());
+      const nextDetectionData = new Map(this.componentMalwareDetectionData());
 
       for (const component of components) {
         const componentPurl = (component.purl ?? '').trim();
@@ -2381,6 +2417,7 @@ export abstract class DataFacade {
         const componentFindings = findingsByComponent.get(componentPurl) ?? [];
         if (componentFindings.length === 0) {
           nextMappings.set(componentPurl, []);
+          nextDetectionData.set(componentPurl, '-');
           nextResults.set(componentPurl, {
             id: `snapshot:${testId}:${componentPurl}`,
             componentPurl,
@@ -2397,6 +2434,25 @@ export abstract class DataFacade {
           new Set(
             componentFindings
               .map((item) => (item.malwarePurl ?? '').trim())
+              .filter((value) => value.length > 0)
+          )
+        ).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
+        const detectionData = Array.from(
+          new Set(
+            componentFindings
+              .map((item) => {
+                const malwarePurl = (item.malwarePurl ?? '').trim();
+                if (!malwarePurl) {
+                  return '';
+                }
+                const detectionMode = inferDetectionModeFromMatchType(item.matchType);
+                return formatDetectionData(
+                  componentPurl,
+                  malwarePurl,
+                  item.matchType,
+                  detectionMode
+                );
+              })
               .filter((value) => value.length > 0)
           )
         ).sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
@@ -2419,6 +2475,7 @@ export abstract class DataFacade {
         }
 
         nextMappings.set(componentPurl, malwarePurls);
+        nextDetectionData.set(componentPurl, detectionData.length > 0 ? detectionData.join(' | ') : '-');
         nextResults.set(componentPurl, {
           id: `snapshot:${testId}:${componentPurl}`,
           componentPurl,
@@ -2431,6 +2488,7 @@ export abstract class DataFacade {
       }
 
       this.componentMalwareMappings.set(nextMappings);
+      this.componentMalwareDetectionData.set(nextDetectionData);
       this.componentMalwareResults.set(nextResults);
       this.componentMalwareStatus.set(nextStatuses);
       this.componentMalwareHydrationSignatureByTest.set(testId, signature);
@@ -2475,6 +2533,7 @@ export abstract class DataFacade {
     const nextMappings = new Map(this.componentMalwareMappings());
     const nextResults = new Map(this.componentMalwareResults());
     const nextStatuses = new Map(this.componentMalwareStatus());
+    const nextDetectionData = new Map(this.componentMalwareDetectionData());
 
     for (const component of components) {
       const componentPurl = (component.purl ?? '').trim();
@@ -2497,8 +2556,12 @@ export abstract class DataFacade {
         typeof component.malwareFindingsCount === 'number'
           ? component.malwareFindingsCount
           : malwarePurls.length;
+      const detectionData = malwarePurls.map((malwarePurl) =>
+        formatDetectionData(componentPurl, malwarePurl, '', '')
+      );
 
       nextMappings.set(componentPurl, malwarePurls);
+      nextDetectionData.set(componentPurl, detectionData.length > 0 ? detectionData.join(' | ') : '-');
       nextResults.set(componentPurl, {
         id: `snapshot:${testId}:${componentPurl}`,
         componentPurl,
@@ -2511,6 +2574,7 @@ export abstract class DataFacade {
     }
 
     this.componentMalwareMappings.set(nextMappings);
+    this.componentMalwareDetectionData.set(nextDetectionData);
     this.componentMalwareResults.set(nextResults);
     this.componentMalwareStatus.set(nextStatuses);
     this.componentMalwareHydrationSignatureByTest.set(testId, signature);
@@ -2555,6 +2619,13 @@ export abstract class DataFacade {
           return result.verdict;
         }
         return 'UNKNOWN';
+      }
+      case 'detectionData': {
+        const purl = (component.purl ?? '').trim();
+        if (!purl) {
+          return '-';
+        }
+        return this.getComponentDetectionData(purl);
       }
       case 'malwareTriageStatus':
         return (component.malwareTriageStatus ?? '').trim() || '-';
@@ -2851,6 +2922,7 @@ export abstract class DataFacade {
       publisher: 'contains',
       supplier: 'contains',
       malwareVerdict: 'contains',
+      detectionData: 'contains',
       malwareTriageStatus: 'contains',
       malwareScannedAt: 'contains',
       malwareValidUntil: 'contains'
@@ -3143,8 +3215,11 @@ export abstract class DataFacade {
       modes: this.componentFilterMode(),
       multi: this.componentMultiFilters()
     };
-    return filterComponentRows(rows, state, (componentPurl) =>
-      this.getComponentMalwareResult(componentPurl)
+    return filterComponentRows(
+      rows,
+      state,
+      (componentPurl) => this.getComponentMalwareResult(componentPurl),
+      (componentPurl) => this.getComponentDetectionData(componentPurl)
     );
   }
 
@@ -3351,6 +3426,7 @@ export abstract class DataFacade {
             publisher: this.readParam(params, 'cf_publisher'),
             supplier: this.readParam(params, 'cf_supplier'),
             malwareVerdict: this.readParam(params, 'cf_malwareVerdict'),
+            detectionData: this.readParam(params, 'cf_detectionData'),
             malwareTriageStatus: this.readParam(params, 'cf_malwareTriageStatus'),
             malwareScannedAt: this.readParam(params, 'cf_malwareScannedAt'),
             malwareValidUntil: this.readParam(params, 'cf_malwareValidUntil')
@@ -3575,6 +3651,7 @@ export abstract class DataFacade {
     publisher: string;
     supplier: string;
     malwareVerdict: string;
+    detectionData: string;
     malwareTriageStatus: string;
     malwareScannedAt: string;
     malwareValidUntil: string;
@@ -3590,6 +3667,7 @@ export abstract class DataFacade {
       publisher: '',
       supplier: '',
       malwareVerdict: '',
+      detectionData: '',
       malwareTriageStatus: '',
       malwareScannedAt: '',
       malwareValidUntil: ''
@@ -3607,6 +3685,7 @@ export abstract class DataFacade {
     publisher: string;
     supplier: string;
     malwareVerdict: string;
+    detectionData: string;
     malwareTriageStatus: string;
     malwareScannedAt: string;
     malwareValidUntil: string;
@@ -3623,6 +3702,7 @@ export abstract class DataFacade {
       publisher: filters.publisher,
       supplier: filters.supplier,
       malwareVerdict: filters.malwareVerdict,
+      detectionData: filters.detectionData,
       malwareTriageStatus: filters.malwareTriageStatus,
       malwareScannedAt: filters.malwareScannedAt,
       malwareValidUntil: filters.malwareValidUntil

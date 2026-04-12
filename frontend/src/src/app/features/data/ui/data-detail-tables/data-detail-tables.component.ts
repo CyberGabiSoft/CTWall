@@ -149,6 +149,15 @@ export class DataDetailTablesComponent {
         selectPlaceholder: 'Exact'
       },
       {
+        key: 'detectionData',
+        label: 'Detection data',
+        mode: modes.detectionData,
+        value: filters.detectionData ?? '',
+        options: options.detectionData ?? [],
+        selected: [],
+        containsPlaceholder: 'Contains mapping'
+      },
+      {
         key: 'licenses',
         label: 'Licenses',
         mode: modes.licenses,
@@ -167,7 +176,12 @@ export class DataDetailTablesComponent {
     if (column === 'purl') {
       return component.purl ?? '-';
     }
-    if (column === 'malwareVerdict' || column === 'malwareScannedAt' || column === 'malwareValidUntil') {
+    if (
+      column === 'malwareVerdict' ||
+      column === 'malwareScannedAt' ||
+      column === 'malwareValidUntil' ||
+      column === 'detectionData'
+    ) {
       return this.data.componentMalwareTooltip(component.purl);
     }
     return null;

@@ -99,11 +99,13 @@ func TestBuildRouteSpecsSelectedPolicyMatrix(t *testing.T) {
 		requireJSON  bool
 	}
 	expected := map[string]expectedPolicy{
-		"GET /health":                      {authRequired: false, requireJSON: false},
-		"GET /api/v1/health":               {authRequired: false, requireJSON: false},
-		"POST /api/v1/auth/login":          {authRequired: false, requireJSON: true},
-		"POST /api/v1/auth/logout":         {authRequired: true, requireJSON: false},
-		"PUT /api/v1/alerting/dedup-rules": {authRequired: true, requireJSON: true},
+		"GET /health":                          {authRequired: false, requireJSON: false},
+		"GET /api/v1/health":                   {authRequired: false, requireJSON: false},
+		"POST /api/v1/auth/login":              {authRequired: false, requireJSON: true},
+		"POST /api/v1/auth/logout":             {authRequired: true, requireJSON: false},
+		"GET /api/v1/alerting/detection-modes": {authRequired: true, requireJSON: false},
+		"PUT /api/v1/alerting/detection-modes": {authRequired: true, requireJSON: true},
+		"PUT /api/v1/alerting/dedup-rules":     {authRequired: true, requireJSON: true},
 		"PUT /api/v1/tests/{testId}/component-analysis/explorer/findings/triage": {authRequired: true, requireJSON: true},
 		"GET /api/v1/component-analysis/explorer/findings":                       {authRequired: true, requireJSON: false},
 	}

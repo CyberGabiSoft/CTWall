@@ -180,6 +180,11 @@ func applyMigrations(db *sql.DB, dbURL string) error {
 		} else if !hasTable {
 			needsReset = true
 		}
+		if hasTable, err := tableExists(db, "alert_detection_modes"); err != nil {
+			return err
+		} else if !hasTable {
+			needsReset = true
+		}
 		if hasColumn, err := columnExists(db, "tests", "sbom_standard"); err != nil {
 			return err
 		} else if !hasColumn {

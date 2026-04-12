@@ -90,6 +90,18 @@ func TestShouldSkipMigration(t *testing.T) {
 	}
 }
 
+func TestShouldReconcileAppliedMigrationChecksum(t *testing.T) {
+	if ok, _ := shouldReconcileAppliedMigrationChecksum("001_init_schema.up.sql", existingSchemaState{productsTableExists: true}); !ok {
+		t.Fatalf("expected checksum reconciliation for initialized baseline schema")
+	}
+	if ok, _ := shouldReconcileAppliedMigrationChecksum("001_init_schema.up.sql", existingSchemaState{productsTableExists: false}); ok {
+		t.Fatalf("did not expect checksum reconciliation for non-initialized schema")
+	}
+	if ok, _ := shouldReconcileAppliedMigrationChecksum("002_alert_detection_modes_compat.up.sql", existingSchemaState{productsTableExists: true}); ok {
+		t.Fatalf("did not expect checksum reconciliation for non-baseline migration")
+	}
+}
+
 func TestComputeMigrationChecksum(t *testing.T) {
 	left := computeMigrationChecksum([]byte("SELECT 1;"))
 	right := computeMigrationChecksum([]byte("SELECT 1;"))

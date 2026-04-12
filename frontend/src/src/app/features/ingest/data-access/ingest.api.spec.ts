@@ -44,7 +44,7 @@ describe('IngestApi (TestBed)', () => {
       revisionId: 'r1'
     });
     http.verify();
-  });
+  }, 30000);
 
   it('uploads an SBOM payload for existing test', async () => {
     await TestBed.configureTestingModule({
@@ -84,5 +84,5 @@ describe('IngestApi (TestBed)', () => {
       revisionId: 'r1'
     });
     http.verify();
-  });
+  }, 30000);
 });

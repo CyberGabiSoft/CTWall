@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { DragDropModule, CdkDragDrop } from '@angular/cdk/drag-drop';
+import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
@@ -109,6 +109,7 @@ export class DataTableComponent implements OnInit, OnChanges, AfterViewInit, OnD
   readonly panelTemplate = input<TemplateRef<unknown> | null>(null);
   readonly rowTemplate = input<TemplateRef<DataTableRowContext> | null>(null);
   readonly rowContentTemplate = input<TemplateRef<DataTableRowContext> | null>(null);
+  readonly rowContentUsesOrderedColumns = input(false);
   readonly expandedRowTemplate = input<TemplateRef<DataTableRowContext> | null>(null);
   readonly expandedDetails = input<((row: unknown) => ReadonlyArray<DataTableExpandedDetailItem>) | null>(
     null
@@ -150,6 +151,7 @@ export class DataTableComponent implements OnInit, OnChanges, AfterViewInit, OnD
   private readonly viewportWidth = signal(0);
   private readonly initialOrderSignature = signal<string | null>(null);
   private readonly selectedDetailColumnKeys = signal<string[]>([]);
+  private readonly panelColumnOrder = signal<string[]>([]);
   private resizeObserver: ResizeObserver | null = null;
 
   readonly configuredBaseColumns = computed(() => {
@@ -195,6 +197,28 @@ export class DataTableComponent implements OnInit, OnChanges, AfterViewInit, OnD
     return this.selectedDetailColumnKeys()
       .map((key) => byKey.get(key))
       .filter((column): column is TableColumnWithMeta => !!column);
+  });
+
+  readonly tableOptionColumnKeys = computed<string[]>(() => {
+    const known = [...this.columnOrder(), ...this.selectedDetailColumnKeys()];
+    if (known.length === 0) {
+      return [];
+    }
+    const knownSet = new Set(known);
+    const ordered: string[] = [];
+
+    for (const key of this.panelColumnOrder()) {
+      if (!knownSet.has(key) || ordered.includes(key)) {
+        continue;
+      }
+      ordered.push(key);
+    }
+    for (const key of known) {
+      if (!ordered.includes(key)) {
+        ordered.push(key);
+      }
+    }
+    return ordered;
   });
 
   readonly selectableColumns = computed<ColumnDefinition[]>(() => {
@@ -257,10 +281,22 @@ export class DataTableComponent implements OnInit, OnChanges, AfterViewInit, OnD
     return all.slice(0, limit);
   });
 
-  readonly orderedColumns = computed<TableColumnWithMeta[]>(() => [
-    ...this.orderedBaseColumns(),
-    ...this.selectedDetailColumns()
-  ]);
+  readonly orderedColumns = computed<TableColumnWithMeta[]>(() => {
+    if (this.shouldAutoFitColumns()) {
+      return this.orderedBaseColumns().map((column) => ({ ...column, source: 'base' as const }));
+    }
+
+    const byKey = new Map<string, TableColumnWithMeta>();
+    for (const column of this.configuredBaseColumns()) {
+      byKey.set(column.key, { ...column, source: 'base' });
+    }
+    for (const column of this.selectedDetailColumns()) {
+      byKey.set(column.key, column);
+    }
+    return this.tableOptionColumnKeys()
+      .map((key) => byKey.get(key))
+      .filter((column): column is TableColumnWithMeta => !!column);
+  });
 
   readonly autoFitHiddenCount = computed(() => {
     if (!this.shouldAutoFitColumns()) {
@@ -460,6 +496,46 @@ export class DataTableComponent implements OnInit, OnChanges, AfterViewInit, OnD
       return;
     }
     this.removeColumn.emit(key);
+  }
+
+  onDropPanelColumn(event: CdkDragDrop<string[]>): void {
+    const current = this.tableOptionColumnKeys();
+    if (current.length === 0) {
+      return;
+    }
+    const previousIndex = Math.max(0, Math.min(event.previousIndex, current.length - 1));
+    const currentIndex = Math.max(0, Math.min(event.currentIndex, current.length - 1));
+    if (previousIndex === currentIndex) {
+      return;
+    }
+
+    const movedKey = current[previousIndex];
+    if (!movedKey) {
+      return;
+    }
+
+    const nextCombined = [...current];
+    moveItemInArray(nextCombined, previousIndex, currentIndex);
+    this.panelColumnOrder.set(nextCombined);
+
+    const nextDetailOrder = nextCombined.filter((key) => this.isDetailColumnKey(key));
+    this.selectedDetailColumnKeys.set(nextDetailOrder);
+
+    if (this.isDetailColumnKey(movedKey)) {
+      return;
+    }
+
+    const previousBaseIndex = this.columnOrder().indexOf(movedKey);
+    const nextBaseOrder = nextCombined.filter((key) => !this.isDetailColumnKey(key));
+    const nextBaseIndex = nextBaseOrder.indexOf(movedKey);
+    if (previousBaseIndex < 0 || nextBaseIndex < 0 || previousBaseIndex === nextBaseIndex) {
+      return;
+    }
+
+    this.dropColumn.emit({
+      previousIndex: previousBaseIndex,
+      currentIndex: nextBaseIndex
+    } as CdkDragDrop<string[]>);
   }
 
   onToggleFilter(key: string, event: Event): void {

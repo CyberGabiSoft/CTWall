@@ -409,34 +409,89 @@ func (s *Service) processJob(ctx context.Context, componentPURL string) error {
 		if err != nil {
 			return err
 		}
-		inputByMalware := make(map[string]store.ComponentAnalysisFindingInput, len(candidates))
+		inputByModeAndMalware := make(map[string]store.ComponentAnalysisFindingInput, len(candidates)*2)
+		smartMatchedByBase := make(map[string]struct{}, len(candidates))
+		prefixInputsByBase := make(map[string]store.ComponentAnalysisFindingInput, len(candidates))
+		putFindingInput := func(mode store.AlertDetectionMode, input store.ComponentAnalysisFindingInput) {
+			modeKey := strings.ToUpper(strings.TrimSpace(string(mode)))
+			malwareKey := strings.TrimSpace(input.MalwarePURL)
+			if modeKey == "" || malwareKey == "" {
+				return
+			}
+			key := modeKey + "|" + malwareKey
+			if prev, ok := inputByModeAndMalware[key]; ok {
+				if matchPriority(input.MatchType) <= matchPriority(prev.MatchType) {
+					return
+				}
+			}
+			inputByModeAndMalware[key] = input
+		}
 		for _, candidate := range candidates {
 			matched, matchType, malwarePURL := matchSmart(componentPURL, candidate)
-			if !matched {
+			if matched {
+				malwarePURL = strings.TrimSpace(malwarePURL)
+				if malwarePURL != "" && candidate.SourceMalwareInputResultID != uuid.Nil {
+					base, _ := normalizePURLBaseAndVersion(malwarePURL)
+					baseKey := strings.ToLower(strings.TrimSpace(base))
+					if baseKey != "" {
+						smartMatchedByBase[baseKey] = struct{}{}
+					}
+					putFindingInput(
+						store.AlertDetectionModePURLVersionSmart,
+						store.ComponentAnalysisFindingInput{
+							ComponentPURL:              componentPURL,
+							MalwarePURL:                malwarePURL,
+							SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
+							MatchType:                  matchType,
+							DetectionMode:              string(store.AlertDetectionModePURLVersionSmart),
+						},
+					)
+				}
+			}
+			if matchedPrefix, prefixPURL := matchContainsPrefix(componentPURL, candidate); matchedPrefix {
+				prefixPURL = strings.TrimSpace(prefixPURL)
+				if prefixPURL != "" && candidate.SourceMalwareInputResultID != uuid.Nil {
+					base, _ := normalizePURLBaseAndVersion(prefixPURL)
+					baseKey := strings.ToLower(strings.TrimSpace(base))
+					if baseKey == "" {
+						baseKey = strings.ToLower(prefixPURL)
+					}
+					input := store.ComponentAnalysisFindingInput{
+						ComponentPURL:              componentPURL,
+						MalwarePURL:                prefixPURL,
+						SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
+						MatchType:                  store.ComponentAnalysisMatchContainsPrefix,
+						DetectionMode:              string(store.AlertDetectionModePURLContainsPrefix),
+					}
+					if prev, ok := prefixInputsByBase[baseKey]; ok {
+						if matchPriority(input.MatchType) <= matchPriority(prev.MatchType) {
+							continue
+						}
+					}
+					prefixInputsByBase[baseKey] = input
+				}
+			}
+		}
+		prefixBases := make([]string, 0, len(prefixInputsByBase))
+		for baseKey := range prefixInputsByBase {
+			prefixBases = append(prefixBases, baseKey)
+		}
+		sort.Strings(prefixBases)
+		for _, baseKey := range prefixBases {
+			if _, blocked := smartMatchedByBase[baseKey]; blocked {
+				// Priority rule: if smart matched for the same base PURL, skip prefix.
 				continue
 			}
-			malwarePURL = strings.TrimSpace(malwarePURL)
-			if malwarePURL == "" || candidate.SourceMalwareInputResultID == uuid.Nil {
-				continue
-			}
-			next := store.ComponentAnalysisFindingInput{
-				ComponentPURL:              componentPURL,
-				MalwarePURL:                malwarePURL,
-				SourceMalwareInputResultID: candidate.SourceMalwareInputResultID,
-				MatchType:                  matchType,
-			}
-			if prev, ok := inputByMalware[malwarePURL]; !ok || matchPriority(next.MatchType) > matchPriority(prev.MatchType) {
-				inputByMalware[malwarePURL] = next
-			}
+			putFindingInput(store.AlertDetectionModePURLContainsPrefix, prefixInputsByBase[baseKey])
 		}
 
-		malwarePURLs := make([]string, 0, len(inputByMalware))
-		for malwarePURL := range inputByMalware {
-			malwarePURLs = append(malwarePURLs, malwarePURL)
+		keys := make([]string, 0, len(inputByModeAndMalware))
+		for key := range inputByModeAndMalware {
+			keys = append(keys, key)
 		}
-		sort.Strings(malwarePURLs)
-		for _, malwarePURL := range malwarePURLs {
-			input := inputByMalware[malwarePURL]
+		sort.Strings(keys)
+		for _, key := range keys {
+			input := inputByModeAndMalware[key]
 			if _, err := s.store.UpsertComponentAnalysisFinding(input); err != nil {
 				return err
 			}
@@ -447,18 +502,50 @@ func (s *Service) processJob(ctx context.Context, componentPURL string) error {
 		if err != nil {
 			return err
 		}
+		smartMatchedByBase := make(map[string]struct{}, len(results))
+		prefixByBase := make(map[string]store.ComponentAnalysisFindingInput, len(results))
 		for _, result := range results {
-			matchType := store.ComponentAnalysisMatchContainsPrefix
 			if strings.EqualFold(result.ComponentPURL, componentPURL) {
-				matchType = store.ComponentAnalysisMatchExact
+				base, _ := normalizePURLBaseAndVersion(result.ComponentPURL)
+				baseKey := strings.ToLower(strings.TrimSpace(base))
+				if baseKey != "" {
+					smartMatchedByBase[baseKey] = struct{}{}
+				}
+				if _, err := s.store.UpsertComponentAnalysisFinding(store.ComponentAnalysisFindingInput{
+					ComponentPURL:              componentPURL,
+					MalwarePURL:                result.ComponentPURL,
+					SourceMalwareInputResultID: result.ID,
+					MatchType:                  store.ComponentAnalysisMatchExact,
+					DetectionMode:              string(store.AlertDetectionModePURLVersionSmart),
+				}); err != nil {
+					return err
+				}
 			}
-			_, err := s.store.UpsertComponentAnalysisFinding(store.ComponentAnalysisFindingInput{
-				ComponentPURL:              componentPURL,
-				MalwarePURL:                result.ComponentPURL,
-				SourceMalwareInputResultID: result.ID,
-				MatchType:                  matchType,
-			})
-			if err != nil {
+			if matchedPrefix, prefixPURL := matchContainsPrefix(componentPURL, store.MalwareMatchCandidate{ComponentPURL: result.ComponentPURL}); matchedPrefix {
+				base, _ := normalizePURLBaseAndVersion(prefixPURL)
+				baseKey := strings.ToLower(strings.TrimSpace(base))
+				if baseKey == "" {
+					baseKey = strings.ToLower(strings.TrimSpace(prefixPURL))
+				}
+				prefixByBase[baseKey] = store.ComponentAnalysisFindingInput{
+					ComponentPURL:              componentPURL,
+					MalwarePURL:                prefixPURL,
+					SourceMalwareInputResultID: result.ID,
+					MatchType:                  store.ComponentAnalysisMatchContainsPrefix,
+					DetectionMode:              string(store.AlertDetectionModePURLContainsPrefix),
+				}
+			}
+		}
+		prefixBases := make([]string, 0, len(prefixByBase))
+		for baseKey := range prefixByBase {
+			prefixBases = append(prefixBases, baseKey)
+		}
+		sort.Strings(prefixBases)
+		for _, baseKey := range prefixBases {
+			if _, blocked := smartMatchedByBase[baseKey]; blocked {
+				continue
+			}
+			if _, err := s.store.UpsertComponentAnalysisFinding(prefixByBase[baseKey]); err != nil {
 				return err
 			}
 		}

@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: docker.io/cybergabisoft/ctwall-backend
   pullPolicy: IfNotPresent
-  tag: "1.0.0"
+  tag: "1.2.0"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -140,6 +140,11 @@ postgresql:
   podSecurityContext: {}
   securityContext: {}
 
+databaseWait:
+  enabled: true
+  timeoutSeconds: 600
+  pollIntervalSeconds: 2
+
 env:
   DB_URL: '{{ printf "postgres://%s:%s@%s:%v/%s?sslmode=disable" .Values.postgresql.auth.username (default "change-me-postgres" .Values.postgresql.auth.password) (include "ctwall-backend.postgresqlServiceName" .) .Values.postgresql.service.port .Values.postgresql.auth.database }}'
 
@@ -239,7 +244,7 @@ configRaw: ""
 alertmanager:
   image:
     repository: prom/alertmanager
-    tag: 0.32.0
+    tag: v0.32.0
     pullPolicy: IfNotPresent
   initImage:
     repository: busybox

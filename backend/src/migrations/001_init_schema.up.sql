@@ -1,1008 +1,17 @@
 -- CTWall baseline schema migration
--- Generated on 2026-03-28 by consolidating historical migrations 001..036
--- Keep this as a single baseline for fresh database initialization.
+-- Fresh schema-only init generated from current final database state.
+-- Backward compatibility migration steps were intentionally removed.
 
-
--- ---------------------------------------------------------------------
--- BEGIN 001_init_schema.up.sql
--- ---------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-CREATE TABLE products (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    description TEXT,
-    archived_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE products IS 'Root entity for organizing projects (e.g. "Banking Ecosystem").';
-CREATE UNIQUE INDEX uq_products_name ON products (LOWER(name));
-
-CREATE TABLE scopes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    description TEXT,
-    archived_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE scopes IS 'Sub-grouping within Product (e.g. "Backend Team" or "Payments Module").';
-CREATE UNIQUE INDEX uq_scopes_name ON scopes (product_id, LOWER(name));
-
-CREATE TABLE tests (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    scope_id UUID NOT NULL REFERENCES scopes(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    is_public BOOLEAN NOT NULL DEFAULT FALSE,
-    public_token TEXT,
-    archived_at TIMESTAMPTZ,
-    sbom_standard TEXT NOT NULL,
-    sbom_spec_version TEXT NOT NULL DEFAULT 'unknown',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE tests IS 'Logical representation of an Application/Service. Holds configuration and permissions, effectively a container for SBOM history.';
-CREATE UNIQUE INDEX uq_tests_name_type ON tests (scope_id, LOWER(name), sbom_standard, sbom_spec_version);
-CREATE UNIQUE INDEX uq_tests_public_token ON tests (public_token) WHERE public_token IS NOT NULL;
-
-CREATE TABLE sbom_objects (
-    sha256 CHAR(64) PRIMARY KEY,
-    storage_path TEXT NOT NULL,
-    size_bytes BIGINT NOT NULL,
-    format TEXT NOT NULL,
-    content_type TEXT NOT NULL DEFAULT '',
-    is_gzip BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE sbom_objects IS 'Physical file storage metadata. Content is deduplicated by SHA256.';
-
-CREATE TABLE ingest_queue (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id UUID,
-    scope_id UUID,
-    test_id UUID,
-    sbom_sha256 CHAR(64) NOT NULL,
-    sbom_standard TEXT NOT NULL,
-    sbom_spec_version TEXT NOT NULL DEFAULT 'unknown',
-    sbom_producer TEXT NOT NULL DEFAULT 'other',
-    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
-    metadata_json JSONB,
-    content_type TEXT NOT NULL DEFAULT '',
-    is_gzip BOOLEAN NOT NULL DEFAULT FALSE,
-    components_count INT NOT NULL DEFAULT 0,
-    processing_stage TEXT NOT NULL DEFAULT 'RECEIVED'
-        CHECK (processing_stage IN ('RECEIVED', 'VALIDATING', 'PARSING', 'ANALYZING', 'STORING', 'REVISIONING', 'COMPLETED', 'FAILED')),
-    status TEXT NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    error_message TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-COMMENT ON TABLE ingest_queue IS 'Durable ingest buffer for SBOM uploads and retry.';
-CREATE INDEX idx_ingest_queue_status ON ingest_queue(status, created_at);
-
-CREATE TABLE test_revisions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    test_id UUID NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-    sbom_sha256 CHAR(64) NOT NULL REFERENCES sbom_objects(sha256),
-    sbom_producer TEXT NOT NULL DEFAULT 'other',
-    sbom_metadata_json JSONB,
-    is_active BOOLEAN DEFAULT TRUE,
-    components_count INT DEFAULT 0,
-    tags JSONB NOT NULL DEFAULT '[]'::jsonb,
-    metadata_json JSONB,
-    last_modified_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE test_revisions IS 'Immutable snapshot of an uploaded SBOM file linked to a Test.';
-CREATE INDEX idx_revisions_test_created ON test_revisions(test_id, created_at DESC);
-CREATE UNIQUE INDEX uq_revisions_active_per_test ON test_revisions(test_id) WHERE is_active = TRUE;
-CREATE INDEX idx_revisions_tags_gin ON test_revisions USING GIN (tags);
-
-CREATE TABLE components (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    revision_id UUID NOT NULL REFERENCES test_revisions(id) ON DELETE CASCADE,
-    purl TEXT NOT NULL,
-    pkg_name TEXT NOT NULL,
-    version TEXT NOT NULL,
-    pkg_type TEXT NOT NULL,
-    pkg_namespace TEXT,
-    sbom_type TEXT NOT NULL,
-    publisher TEXT,
-    supplier TEXT,
-    licenses JSONB,
-    properties JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_components_revision ON components(revision_id);
-CREATE INDEX idx_components_purl ON components(purl);
-CREATE INDEX idx_components_licenses ON components USING GIN (licenses);
-
-CREATE TABLE component_overrides (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    test_id UUID NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-    purl_pattern TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('APPROVED', 'WARNING', 'REJECTED')),
-    reason TEXT,
-    comment TEXT,
-    author_id UUID,
-    expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_override_target UNIQUE (test_id, purl_pattern)
-);
-COMMENT ON TABLE component_overrides IS 'Stores triage decisions (Approved/Rejected) that persist across SBOM uploads for a Test.';
-
-CREATE TABLE scan_malware_source (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK (source_type IN ('OSV_API', 'OSV_MIRROR', 'GITHUB_ADVISORIES')),
-    base_url TEXT NOT NULL,
-    config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-COMMENT ON TABLE scan_malware_source IS 'Configuration for malware data sources (OSV API/mirror, GitHub advisories, etc.).';
-
-CREATE TABLE source_scanners (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source_id UUID NOT NULL REFERENCES scan_malware_source(id) ON DELETE RESTRICT,
-    name TEXT NOT NULL,
-    scanner_type TEXT NOT NULL,
-    version TEXT,
-    results_path TEXT,
-    config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-COMMENT ON TABLE source_scanners IS 'Registered scanners with type/name/version tied to a malware source.';
-
-CREATE TABLE source_malware_input_queue (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    component_purl TEXT NOT NULL,
-    scanner_id UUID NOT NULL REFERENCES source_scanners(id) ON DELETE CASCADE,
-    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_analysis_queue_target UNIQUE (component_purl, scanner_id)
-);
-CREATE INDEX idx_queue_poll ON source_malware_input_queue(status, created_at);
-
-CREATE TABLE source_malware_input_results (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    component_purl TEXT NOT NULL,
-    component_hash TEXT,
-    verdict TEXT NOT NULL CHECK (verdict IN ('MALWARE', 'CLEAN', 'UNKNOWN')),
-    findings_count INT DEFAULT 0,
-    summary TEXT,
-    scanned_at TIMESTAMPTZ DEFAULT NOW(),
-    valid_until TIMESTAMPTZ,
-    CONSTRAINT uq_result_target UNIQUE (component_purl)
-);
-CREATE INDEX idx_results_lookup ON source_malware_input_results(component_purl, verdict);
-COMMENT ON TABLE source_malware_input_results IS 'Persistent storage for analysis results (Malware/Heuristics). Decoupled from specific SBOMs via PURL.';
-
-CREATE TABLE source_malware_input_component_results (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    component_purl TEXT NOT NULL,
-    component_hash TEXT,
-    analysis_result_id UUID REFERENCES source_malware_input_results(id) ON DELETE CASCADE,
-    scan_id UUID NOT NULL REFERENCES source_malware_input_queue(id) ON DELETE CASCADE,
-    source_id UUID NOT NULL,
-    result_filename TEXT,
-    evidence TEXT,
-    details_json JSONB NOT NULL,
-    published_at TIMESTAMPTZ,
-    modified_at TIMESTAMPTZ,
-    detect_version TEXT,
-    fixed_version TEXT,
-    is_malware BOOLEAN NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_scan_component_result UNIQUE (component_purl, source_id, result_filename)
-);
-CREATE INDEX idx_scan_component_results_purl_created ON source_malware_input_component_results(component_purl, created_at DESC);
-CREATE INDEX idx_scan_component_results_source_created ON source_malware_input_component_results(source_id, created_at DESC);
-COMMENT ON TABLE source_malware_input_component_results IS 'Raw malware/heuristics findings per component PURL (hash may be unavailable).';
-
-CREATE TABLE component_analysis_malware_queue (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    component_purl TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    reason TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (reason IN ('SCHEDULED', 'MANUAL', 'BACKFILL')),
-    attempts INT NOT NULL DEFAULT 0,
-    last_error TEXT,
-    locked_at TIMESTAMPTZ,
-    locked_by TEXT,
-    scheduled_for TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-CREATE UNIQUE INDEX uq_component_analysis_malware_queue_active
-    ON component_analysis_malware_queue(component_purl)
-    WHERE status IN ('PENDING', 'PROCESSING');
-CREATE INDEX idx_component_analysis_malware_queue_status ON component_analysis_malware_queue(status, created_at);
-CREATE INDEX idx_component_analysis_malware_queue_component ON component_analysis_malware_queue(component_purl, created_at DESC);
-COMMENT ON TABLE component_analysis_malware_queue IS 'Queue of component PURL mapping runs to malware input results.';
-
-CREATE TABLE component_analysis_malware_findings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    component_purl TEXT NOT NULL,
-    malware_purl TEXT NOT NULL,
-    source_malware_input_result_id UUID NOT NULL REFERENCES source_malware_input_results(id) ON DELETE CASCADE,
-    match_type TEXT NOT NULL CHECK (match_type IN ('EXACT', 'CONTAINS_PREFIX')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_component_analysis_malware_findings UNIQUE (component_purl, malware_purl)
-);
-CREATE INDEX idx_component_analysis_malware_findings_component ON component_analysis_malware_findings(component_purl);
-CREATE INDEX idx_component_analysis_malware_findings_malware ON component_analysis_malware_findings(malware_purl);
-COMMENT ON TABLE component_analysis_malware_findings IS 'Mapping between SBOM component PURLs and malware input PURLs.';
-
-CREATE TABLE integrations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    product_id UUID REFERENCES products(id) ON DELETE CASCADE,
-    scope_id UUID REFERENCES scopes(id) ON DELETE CASCADE,
-    test_id UUID REFERENCES tests(id) ON DELETE CASCADE,
-    provider TEXT NOT NULL,
-    config JSONB NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT chk_provider CHECK (provider IN ('JIRA', 'SLACK', 'WEBHOOK', 'EMAIL'))
-);
-
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'WRITER' CHECK (role IN ('ADMIN', 'WRITER', 'READER')),
-    account_type TEXT DEFAULT 'USER' CHECK (account_type IN ('USER', 'SERVICE_ACCOUNT')),
-    full_name TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE api_tokens (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    token_hash TEXT NOT NULL,
-    last_used_at TIMESTAMPTZ,
-    expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE refresh_tokens (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    revoked_at TIMESTAMPTZ,
-    replaced_by_id UUID REFERENCES refresh_tokens(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    last_used_at TIMESTAMPTZ,
-    user_agent TEXT,
-    ip_address TEXT
-);
-CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
-CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at);
-
-CREATE TABLE audit_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    action TEXT NOT NULL,
-    entity_type TEXT NOT NULL,
-    entity_id UUID,
-    details JSONB,
-    ip_address TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_audit_created ON audit_logs USING BRIN (created_at);
-
--- END 001_init_schema.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 002_component_analysis_schedule_state.up.sql
--- ---------------------------------------------------------------------
--- Component analysis malware schedule + per-component state.
--- This prevents repeated re-analysis when there are no findings (clean components),
--- and enables controlled, scheduled re-analysis.
-
-CREATE TABLE IF NOT EXISTS component_analysis_malware_schedule (
-    id INT PRIMARY KEY CHECK (id = 1),
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    interval_seconds INT NOT NULL DEFAULT 86400 CHECK (interval_seconds >= 0),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE component_analysis_malware_schedule IS 'Runtime configuration for scheduled component malware mapping re-analysis.';
-
-INSERT INTO component_analysis_malware_schedule (id)
-VALUES (1)
-ON CONFLICT (id) DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS component_analysis_malware_component_state (
-    component_purl TEXT PRIMARY KEY,
-    scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    valid_until TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE component_analysis_malware_component_state IS 'Tracks the latest component malware mapping run per component PURL (even if no findings).';
-CREATE INDEX IF NOT EXISTS idx_component_analysis_malware_component_state_valid_until
-    ON component_analysis_malware_component_state(valid_until);
-
--- END 002_component_analysis_schedule_state.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 003_test_revision_malware_summary.up.sql
--- ---------------------------------------------------------------------
--- Materialized malware summary per TestRevision (active revision is used by UI).
--- The summary is recomputed asynchronously when component analysis results change.
-
-CREATE TABLE IF NOT EXISTS test_revision_malware_summary (
-    revision_id UUID PRIMARY KEY REFERENCES test_revisions(id) ON DELETE CASCADE,
-    malware_component_count INT NOT NULL DEFAULT 0 CHECK (malware_component_count >= 0),
-    computed_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-COMMENT ON TABLE test_revision_malware_summary IS 'Materialized malware summary per TestRevision. Source of truth remains mappings/results; this is a cached read model.';
-
--- Queue of revision summary recomputation jobs. One active job per revision_id.
-CREATE TABLE IF NOT EXISTS test_revision_malware_summary_queue (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    revision_id UUID NOT NULL REFERENCES test_revisions(id) ON DELETE CASCADE,
-    CONSTRAINT uq_test_revision_malware_summary_queue_revision UNIQUE (revision_id),
-    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    reason TEXT NOT NULL DEFAULT 'BACKFILL' CHECK (reason IN ('BACKFILL', 'INGEST', 'COMPONENT_ANALYSIS_UPDATE')),
-    attempts INT NOT NULL DEFAULT 0,
-    last_error TEXT,
-    locked_at TIMESTAMPTZ,
-    locked_by TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-COMMENT ON TABLE test_revision_malware_summary_queue IS 'Queue of recomputation jobs for test_revision_malware_summary.';
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_malware_summary_queue_status
-    ON test_revision_malware_summary_queue(status, created_at);
-CREATE INDEX IF NOT EXISTS idx_test_revision_malware_summary_queue_revision
-    ON test_revision_malware_summary_queue(revision_id, created_at DESC);
-
--- Backfill summary rows for existing revisions.
-INSERT INTO test_revision_malware_summary (revision_id)
-SELECT id
-FROM test_revisions
-ON CONFLICT (revision_id) DO NOTHING;
-
--- Enqueue active revisions for initial compute.
-INSERT INTO test_revision_malware_summary_queue (revision_id, status, reason)
-SELECT id, 'PENDING', 'BACKFILL'
-FROM test_revisions
-WHERE is_active = TRUE
-ON CONFLICT (revision_id) DO UPDATE SET
-    status = 'PENDING',
-    reason = EXCLUDED.reason,
-    updated_at = NOW(),
-    completed_at = NULL,
-    last_error = NULL;
-
--- END 003_test_revision_malware_summary.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 004_test_revision_malware_summary_queue_manual_reason.up.sql
--- ---------------------------------------------------------------------
--- Allow manual recomputation reason for test revision malware summary queue.
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conrelid = 'public.test_revision_malware_summary_queue'::regclass
-      AND conname = 'test_revision_malware_summary_queue_reason_check'
-  ) THEN
-    ALTER TABLE test_revision_malware_summary_queue
-      DROP CONSTRAINT test_revision_malware_summary_queue_reason_check;
-  END IF;
-END $$;
-
-ALTER TABLE test_revision_malware_summary_queue
-  ADD CONSTRAINT test_revision_malware_summary_queue_reason_check
-  CHECK (reason IN ('BACKFILL', 'INGEST', 'COMPONENT_ANALYSIS_UPDATE', 'MANUAL'));
-
-
--- END 004_test_revision_malware_summary_queue_manual_reason.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 005_components_search_trgm.up.sql
--- ---------------------------------------------------------------------
--- Enable fast substring search for Components PURL.
--- pg_trgm is an official PostgreSQL extension (contrib) widely used for ILIKE/contains search.
-
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+SET check_function_bodies = false;
 
--- Accelerate `purl ILIKE '%' || q || '%'` queries.
-CREATE INDEX IF NOT EXISTS idx_components_purl_trgm
-  ON components
-  USING GIN (purl gin_trgm_ops);
-
-
--- END 005_components_search_trgm.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 006_events_indexes.up.sql
--- ---------------------------------------------------------------------
--- Indexes for Events UI queries derived from audit_logs (append-only).
--- NOTE: We intentionally scope indexes to rows with details.event_key to keep them small.
-
-CREATE INDEX IF NOT EXISTS idx_audit_events_event_key_created
-  ON audit_logs ((details->>'event_key'), created_at DESC)
-  WHERE action <> 'EVENT_ACK' AND details ? 'event_key' AND COALESCE(details->>'event_key','') <> '';
-
-CREATE INDEX IF NOT EXISTS idx_audit_events_severity_category_created
-  ON audit_logs ((details->>'severity'), (details->>'category'), created_at DESC)
-  WHERE action <> 'EVENT_ACK' AND details ? 'event_key' AND COALESCE(details->>'event_key','') <> '';
-
-CREATE INDEX IF NOT EXISTS idx_audit_events_ack_event_key_created
-  ON audit_logs ((details->>'event_key'), created_at DESC)
-  WHERE action = 'EVENT_ACK' AND details ? 'event_key' AND COALESCE(details->>'event_key','') <> '';
-
-
--- END 006_events_indexes.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 007_try_jsonb_helper.up.sql
--- ---------------------------------------------------------------------
--- Helper to safely parse legacy audit_logs.details values when the column is not JSONB
--- (or contains invalid JSON due to historic data). This prevents Events queries from 500-ing.
+-- Name: ctwall_product_group_grants_validate(); Type: FUNCTION; Schema: public; Owner: -
 --
--- Note: returning NULL for invalid payloads intentionally excludes such rows from Events,
--- because they cannot participate in event_key-based aggregation anyway.
-CREATE OR REPLACE FUNCTION ctwall_try_jsonb(input_text TEXT)
-RETURNS JSONB
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  IF input_text IS NULL OR BTRIM(input_text) = '' THEN
-    RETURN NULL;
-  END IF;
-  RETURN input_text::jsonb;
-EXCEPTION WHEN others THEN
-  RETURN NULL;
-END;
-$$;
 
-
--- END 007_try_jsonb_helper.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 008_audit_logs_backfill_event_key.up.sql
--- ---------------------------------------------------------------------
--- Backfill audit_logs.details.event_key for legacy rows.
--- event_key is required for Events aggregation and for consistent auditing.
---
--- NOTE: This uses a conservative, low-cardinality derivation: "<category>.<normalized_action>".
--- It intentionally does not include dynamic identifiers, URLs, UUIDs, etc.
-
-UPDATE audit_logs
-SET details = jsonb_set(
-  details,
-  '{event_key}',
-  to_jsonb(
-    left(
-      coalesce(nullif(details->>'category', ''), 'system')
-      || '.'
-      || coalesce(
-        nullif(
-          btrim(regexp_replace(lower(action), '[^a-z0-9]+', '_', 'g'), '_'),
-          ''
-        ),
-        'unknown_action'
-      ),
-      240
-    )
-  ),
-  true
-)
-WHERE details IS NOT NULL
-  AND (NOT (details ? 'event_key') OR btrim(coalesce(details->>'event_key', '')) = '');
-
-
--- END 008_audit_logs_backfill_event_key.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 009_projects_workspace_selector.up.sql
--- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS projects (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    description TEXT,
-    archived_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name ON projects (LOWER(name));
-
-CREATE TABLE IF NOT EXISTS project_memberships (
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    PRIMARY KEY (project_id, user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_project_memberships_user_project ON project_memberships (user_id, project_id);
-CREATE INDEX IF NOT EXISTS idx_project_memberships_project_user ON project_memberships (project_id, user_id);
-
-CREATE TABLE IF NOT EXISTS user_settings (
-    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    selected_project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_user_settings_selected_project ON user_settings (selected_project_id);
-
-ALTER TABLE products
-    ADD COLUMN IF NOT EXISTS project_id UUID;
-
-INSERT INTO projects (name, description)
-VALUES ('Default Project', 'Default workspace created by migration.')
-ON CONFLICT (LOWER(name)) DO NOTHING;
-
-CREATE OR REPLACE FUNCTION ctwall_default_project_id()
-RETURNS UUID
-LANGUAGE sql
-STABLE
-AS $$
-    SELECT id
-    FROM projects
-    WHERE LOWER(name) = LOWER('Default Project')
-    LIMIT 1
-$$;
-
-ALTER TABLE products
-    ALTER COLUMN project_id SET DEFAULT ctwall_default_project_id();
-
-WITH default_project AS (
-    SELECT id
-    FROM projects
-    WHERE LOWER(name) = LOWER('Default Project')
-    LIMIT 1
-)
-UPDATE products p
-SET project_id = dp.id
-FROM default_project dp
-WHERE p.project_id IS NULL;
-
-ALTER TABLE products
-    ALTER COLUMN project_id SET NOT NULL;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'fk_products_project_id'
-    ) THEN
-        ALTER TABLE products
-            ADD CONSTRAINT fk_products_project_id
-            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
-    END IF;
-END $$;
-
-DROP INDEX IF EXISTS uq_products_name;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_products_project_name ON products (project_id, LOWER(name));
-CREATE INDEX IF NOT EXISTS idx_products_project_id ON products (project_id);
-
-WITH default_project AS (
-    SELECT id
-    FROM projects
-    WHERE LOWER(name) = LOWER('Default Project')
-    LIMIT 1
-)
-INSERT INTO project_memberships (project_id, user_id, created_by)
-SELECT dp.id, u.id, NULL
-FROM users u
-CROSS JOIN default_project dp
-ON CONFLICT (project_id, user_id) DO NOTHING;
-
-WITH default_project AS (
-    SELECT id
-    FROM projects
-    WHERE LOWER(name) = LOWER('Default Project')
-    LIMIT 1
-)
-INSERT INTO user_settings (user_id, selected_project_id, updated_at)
-SELECT u.id, dp.id, NOW()
-FROM users u
-CROSS JOIN default_project dp
-ON CONFLICT (user_id) DO UPDATE
-SET selected_project_id = EXCLUDED.selected_project_id,
-    updated_at = NOW();
-
--- END 009_projects_workspace_selector.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 010_connector_configs_global.up.sql
--- ---------------------------------------------------------------------
--- Connector configuration storage for Settings > Connectors (MVP).
--- This table is future-ready for scoped configs (PRODUCT/SCOPE/TEST),
--- while the current implementation uses only GLOBAL scope.
-
-CREATE TABLE IF NOT EXISTS connector_configs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    connector_type TEXT NOT NULL CHECK (connector_type IN ('JIRA', 'SLACK', 'SMTP')),
-    scope_type TEXT NOT NULL DEFAULT 'GLOBAL' CHECK (scope_type IN ('GLOBAL', 'PRODUCT', 'SCOPE', 'TEST')),
-    scope_id UUID NULL,
-    config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    last_test_status TEXT NOT NULL DEFAULT 'NOT_CONFIGURED' CHECK (last_test_status IN ('NOT_CONFIGURED', 'PASSED', 'FAILED')),
-    last_test_at TIMESTAMPTZ NULL,
-    last_test_message TEXT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_connector_scope_ref
-        CHECK (
-            (scope_type = 'GLOBAL' AND scope_id IS NULL)
-            OR
-            (scope_type <> 'GLOBAL' AND scope_id IS NOT NULL)
-        )
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_connector_configs_global
-    ON connector_configs (connector_type)
-    WHERE scope_type = 'GLOBAL' AND scope_id IS NULL;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_connector_configs_scoped
-    ON connector_configs (connector_type, scope_type, scope_id)
-    WHERE scope_type <> 'GLOBAL' AND scope_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_connector_configs_scope
-    ON connector_configs (scope_type, scope_id);
-
--- Optional data carry-over from legacy "integrations" rows configured globally.
-INSERT INTO connector_configs (
-    connector_type,
-    scope_type,
-    scope_id,
-    config_json,
-    is_enabled,
-    created_at,
-    updated_at
-)
-SELECT
-    CASE i.provider
-        WHEN 'EMAIL' THEN 'SMTP'
-        ELSE i.provider
-    END AS connector_type,
-    'GLOBAL' AS scope_type,
-    NULL::UUID AS scope_id,
-    COALESCE(i.config, '{}'::jsonb) AS config_json,
-    COALESCE(i.is_active, TRUE) AS is_enabled,
-    COALESCE(i.updated_at, NOW()) AS created_at,
-    COALESCE(i.updated_at, NOW()) AS updated_at
-FROM integrations i
-WHERE i.product_id IS NULL
-  AND i.scope_id IS NULL
-  AND i.test_id IS NULL
-  AND i.provider IN ('JIRA', 'SLACK', 'EMAIL')
-ON CONFLICT DO NOTHING;
-
--- END 010_connector_configs_global.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 011_component_malware_findings_triage_and_priorities.up.sql
--- ---------------------------------------------------------------------
--- Malware finding triage (per test) + default priority hierarchy (product/scope/test).
--- Priority levels:
--- - P1: Critical
--- - P2: High (default fallback)
--- - P3: Medium
--- - P4: Low
-
-ALTER TABLE products
-    ADD COLUMN IF NOT EXISTS malware_default_priority TEXT;
-
-ALTER TABLE scopes
-    ADD COLUMN IF NOT EXISTS malware_default_priority TEXT;
-
-ALTER TABLE tests
-    ADD COLUMN IF NOT EXISTS malware_default_priority TEXT;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_products_malware_default_priority'
-    ) THEN
-        ALTER TABLE products
-            ADD CONSTRAINT chk_products_malware_default_priority
-            CHECK (malware_default_priority IS NULL OR malware_default_priority IN ('P1', 'P2', 'P3', 'P4'));
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_scopes_malware_default_priority'
-    ) THEN
-        ALTER TABLE scopes
-            ADD CONSTRAINT chk_scopes_malware_default_priority
-            CHECK (malware_default_priority IS NULL OR malware_default_priority IN ('P1', 'P2', 'P3', 'P4'));
-    END IF;
-
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_tests_malware_default_priority'
-    ) THEN
-        ALTER TABLE tests
-            ADD CONSTRAINT chk_tests_malware_default_priority
-            CHECK (malware_default_priority IS NULL OR malware_default_priority IN ('P1', 'P2', 'P3', 'P4'));
-    END IF;
-END $$;
-
-CREATE TABLE IF NOT EXISTS component_malware_findings_triage (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    test_id UUID NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-    component_purl TEXT NOT NULL,
-    malware_purl TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('OPEN', 'RISK_ACCEPTED', 'FALSE_POSITIVE', 'CLOSED')),
-    priority TEXT CHECK (priority IN ('P1', 'P2', 'P3', 'P4')),
-    reason TEXT,
-    expires_at TIMESTAMPTZ,
-    author_id UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_component_malware_findings_triage UNIQUE (test_id, component_purl, malware_purl)
-);
-
-CREATE INDEX IF NOT EXISTS idx_component_malware_findings_triage_project
-    ON component_malware_findings_triage(project_id, updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_component_malware_findings_triage_test
-    ON component_malware_findings_triage(test_id, updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_component_malware_findings_triage_lookup
-    ON component_malware_findings_triage(test_id, component_purl, malware_purl);
-
-
--- END 011_component_malware_findings_triage_and_priorities.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 012_alerts_mvp.up.sql
--- ---------------------------------------------------------------------
--- Alerts (MVP): batched groups + append-only occurrences + per-project connector routing.
--- NOTE: Connection profiles (SMTP/Slack secrets etc.) live in connector_configs (GLOBAL scope).
--- This migration adds only alert state and routing preferences.
-
-CREATE TABLE IF NOT EXISTS alert_groups (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    severity TEXT NOT NULL CHECK (severity IN ('INFO', 'WARN', 'ERROR')),
-    category TEXT NOT NULL,
-    type TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('OPEN', 'ACKNOWLEDGED', 'CLOSED')),
-    group_key TEXT NOT NULL,
-    title TEXT NOT NULL,
-    entity_ref TEXT NULL,
-    occurrences INT NOT NULL DEFAULT 1,
-    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_notified_at TIMESTAMPTZ NULL,
-    acknowledged_at TIMESTAMPTZ NULL,
-    acknowledged_by UUID NULL REFERENCES users(id),
-    closed_at TIMESTAMPTZ NULL,
-    closed_by UUID NULL REFERENCES users(id),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (project_id, group_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_alert_groups_project_status_severity_last_seen
-    ON alert_groups (project_id, status, severity, last_seen_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_alert_groups_project_last_seen
-    ON alert_groups (project_id, last_seen_at DESC);
-
-CREATE TABLE IF NOT EXISTS alert_occurrences (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    group_id UUID NOT NULL REFERENCES alert_groups(id) ON DELETE CASCADE,
-    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    product_id UUID NULL REFERENCES products(id) ON DELETE SET NULL,
-    scope_id UUID NULL REFERENCES scopes(id) ON DELETE SET NULL,
-    test_id UUID NULL REFERENCES tests(id) ON DELETE SET NULL,
-    entity_ref TEXT NULL,
-    details JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_alert_occurrences_project_occurred_at
-    ON alert_occurrences (project_id, occurred_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_alert_occurrences_project_group_occurred_at
-    ON alert_occurrences (project_id, group_id, occurred_at DESC);
-
-CREATE TABLE IF NOT EXISTS alert_connector_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    connector_type TEXT NOT NULL CHECK (connector_type IN ('SMTP', 'SLACK')),
-    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (project_id, connector_type)
-);
-
-CREATE TABLE IF NOT EXISTS alert_routes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    connector_type TEXT NOT NULL CHECK (connector_type IN ('SMTP', 'SLACK')),
-    target_type TEXT NOT NULL CHECK (target_type IN ('PRODUCT', 'SCOPE', 'TEST')),
-    target_id UUID NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (project_id, connector_type, target_type, target_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_alert_routes_project_connector
-    ON alert_routes (project_id, connector_type);
-
-
--- END 012_alerts_mvp.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 013_projects_created_by.up.sql
--- ---------------------------------------------------------------------
-ALTER TABLE projects
-    ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_projects_created_by ON projects (created_by);
-
-
--- END 013_projects_created_by.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 014_product_groups_and_project_roles.up.sql
--- ---------------------------------------------------------------------
-ALTER TABLE project_memberships
-    ADD COLUMN IF NOT EXISTS project_role TEXT;
-
-UPDATE project_memberships pm
-SET project_role = CASE
-    WHEN UPPER(u.role) = 'ADMIN' THEN 'ADMIN'
-    WHEN UPPER(u.role) = 'WRITER' THEN 'WRITER'
-    ELSE 'READER'
-END
-FROM users u
-WHERE u.id = pm.user_id
-  AND (pm.project_role IS NULL OR BTRIM(pm.project_role) = '');
-
-ALTER TABLE project_memberships
-    ALTER COLUMN project_role SET DEFAULT 'READER';
-
-UPDATE project_memberships
-SET project_role = 'READER'
-WHERE project_role IS NULL OR BTRIM(project_role) = '';
-
-ALTER TABLE project_memberships
-    ALTER COLUMN project_role SET NOT NULL;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_project_memberships_project_role'
-    ) THEN
-        ALTER TABLE project_memberships
-            ADD CONSTRAINT chk_project_memberships_project_role
-            CHECK (project_role IN ('ADMIN', 'WRITER', 'READER'));
-    END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS idx_project_memberships_user_project_role
-    ON project_memberships (user_id, project_id, project_role);
-
-CREATE TABLE IF NOT EXISTS user_groups (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    description TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID REFERENCES users(id) ON DELETE RESTRICT
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_user_groups_project_name
-    ON user_groups (project_id, LOWER(name));
-CREATE INDEX IF NOT EXISTS idx_user_groups_project_id
-    ON user_groups (project_id);
-
-CREATE TABLE IF NOT EXISTS user_group_members (
-    group_id UUID NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('OWNER', 'EDITOR', 'VIEWER')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    PRIMARY KEY (group_id, user_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_group_members_user_group
-    ON user_group_members (user_id, group_id);
-
-ALTER TABLE products
-    ADD COLUMN IF NOT EXISTS owner_group_id UUID REFERENCES user_groups(id) ON DELETE RESTRICT;
-
-ALTER TABLE products
-    ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE RESTRICT;
-
-CREATE INDEX IF NOT EXISTS idx_products_owner_group_id
-    ON products (owner_group_id);
-CREATE INDEX IF NOT EXISTS idx_products_created_by
-    ON products (created_by);
-
-CREATE TABLE IF NOT EXISTS product_group_grants (
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    group_id UUID NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('EDITOR', 'VIEWER')),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    PRIMARY KEY (product_id, group_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_product_group_grants_group_product
-    ON product_group_grants (group_id, product_id);
-
-CREATE OR REPLACE FUNCTION ctwall_products_validate_owner_group()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    owner_project_id UUID;
-BEGIN
-    IF NEW.owner_group_id IS NULL THEN
-        RETURN NEW;
-    END IF;
-
-    SELECT ug.project_id
-    INTO owner_project_id
-    FROM user_groups ug
-    WHERE ug.id = NEW.owner_group_id;
-
-    IF owner_project_id IS NULL THEN
-        RAISE EXCEPTION 'Owner group not found'
-            USING ERRCODE = '23503';
-    END IF;
-    IF owner_project_id <> NEW.project_id THEN
-        RAISE EXCEPTION 'Owner group must belong to the same project as product'
-            USING ERRCODE = '23514';
-    END IF;
-
-    IF NEW.created_by IS NOT NULL
-       AND NOT EXISTS (
-           SELECT 1
-           FROM user_group_members gm
-           WHERE gm.group_id = NEW.owner_group_id
-             AND gm.user_id = NEW.created_by
-             AND gm.role = 'OWNER'
-       ) THEN
-        RAISE EXCEPTION 'Product creator must be OWNER in owner group'
-            USING ERRCODE = '23514';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_products_validate_owner_group ON products;
-CREATE TRIGGER trg_products_validate_owner_group
-BEFORE INSERT OR UPDATE OF owner_group_id, project_id, created_by
-ON products
-FOR EACH ROW
-EXECUTE FUNCTION ctwall_products_validate_owner_group();
-
-CREATE OR REPLACE FUNCTION ctwall_product_group_grants_validate()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
+CREATE FUNCTION public.ctwall_product_group_grants_validate() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
 DECLARE
     product_project_id UUID;
     owner_group_id UUID;
@@ -1039,850 +48,2700 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_product_group_grants_validate ON product_group_grants;
-CREATE TRIGGER trg_product_group_grants_validate
-BEFORE INSERT OR UPDATE OF product_id, group_id
-ON product_group_grants
-FOR EACH ROW
-EXECUTE FUNCTION ctwall_product_group_grants_validate();
 
--- END 014_product_groups_and_project_roles.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 015_users_role_none.up.sql
--- ---------------------------------------------------------------------
-ALTER TABLE users
-    ALTER COLUMN role SET DEFAULT 'NONE';
-
-ALTER TABLE users
-    DROP CONSTRAINT IF EXISTS users_role_check;
-
-ALTER TABLE users
-    DROP CONSTRAINT IF EXISTS chk_users_role;
-
-ALTER TABLE users
-    ADD CONSTRAINT chk_users_role
-    CHECK (role IN ('ADMIN', 'WRITER', 'READER', 'NONE'));
-
--- END 015_users_role_none.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 016_alert_dispatch_queue.up.sql
--- ---------------------------------------------------------------------
--- Durable queue for Alertmanager integration.
--- Used by dedicated alerting control/dispatcher processes.
-
-CREATE TABLE IF NOT EXISTS alert_dispatch_queue (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_type TEXT NOT NULL CHECK (message_type IN ('CONFIG_APPLY', 'ALERT_EVENT')),
-    event_state TEXT NULL CHECK (event_state IN ('FIRING', 'RESOLVED')),
-    project_id UUID NULL REFERENCES projects(id) ON DELETE CASCADE,
-    group_id UUID NULL REFERENCES alert_groups(id) ON DELETE CASCADE,
-    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-    state TEXT NOT NULL CHECK (state IN ('PENDING', 'IN_FLIGHT', 'RETRY', 'DONE', 'DEAD')),
-    attempt_count INT NOT NULL DEFAULT 0,
-    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    expires_at TIMESTAMPTZ NULL,
-    locked_at TIMESTAMPTZ NULL,
-    locked_by TEXT NULL,
-    last_error_code TEXT NULL,
-    last_error_message TEXT NULL,
-    done_at TIMESTAMPTZ NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_alert_dispatch_event_fields
-        CHECK (
-            (message_type = 'ALERT_EVENT' AND event_state IS NOT NULL AND project_id IS NOT NULL AND group_id IS NOT NULL)
-            OR
-            (message_type = 'CONFIG_APPLY' AND event_state IS NULL)
-        )
-);
-
-CREATE INDEX IF NOT EXISTS idx_alert_dispatch_queue_claim
-    ON alert_dispatch_queue (message_type, state, next_attempt_at, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_alert_dispatch_queue_group
-    ON alert_dispatch_queue (project_id, group_id, message_type, created_at DESC)
-    WHERE group_id IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_alert_dispatch_queue_state_done
-    ON alert_dispatch_queue (state, done_at);
-
--- END 016_alert_dispatch_queue.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 017_alert_dedup_rules.up.sql
--- ---------------------------------------------------------------------
--- Alert deduplication rules per project.
--- Default behavior remains project-global if no explicit rule matches.
-
-CREATE TABLE IF NOT EXISTS alert_dedup_rules (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    alert_type TEXT NOT NULL,
-    dedup_scope TEXT NOT NULL CHECK (dedup_scope IN ('GLOBAL', 'PRODUCT', 'SCOPE', 'TEST')),
-    product_id UUID NULL REFERENCES products(id) ON DELETE CASCADE,
-    scope_id UUID NULL REFERENCES scopes(id) ON DELETE CASCADE,
-    test_id UUID NULL REFERENCES tests(id) ON DELETE CASCADE,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_alert_dedup_rules_scope_target
-        CHECK (
-            (dedup_scope = 'GLOBAL' AND product_id IS NULL AND scope_id IS NULL AND test_id IS NULL)
-            OR
-            (dedup_scope = 'PRODUCT' AND product_id IS NOT NULL AND scope_id IS NULL AND test_id IS NULL)
-            OR
-            (dedup_scope = 'SCOPE' AND product_id IS NULL AND scope_id IS NOT NULL AND test_id IS NULL)
-            OR
-            (dedup_scope = 'TEST' AND product_id IS NULL AND scope_id IS NULL AND test_id IS NOT NULL)
-        )
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_alert_dedup_rules_identity
-    ON alert_dedup_rules (
-        project_id,
-        alert_type,
-        dedup_scope,
-        COALESCE(product_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid),
-        COALESCE(test_id, '00000000-0000-0000-0000-000000000000'::uuid)
-    );
-
-CREATE INDEX IF NOT EXISTS idx_alert_dedup_rules_lookup
-    ON alert_dedup_rules (project_id, alert_type, dedup_scope, enabled);
-
--- END 017_alert_dedup_rules.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 018_test_revision_finding_diffs.up.sql
--- ---------------------------------------------------------------------
--- SBOM reimport: async revision delta queue + persisted diff rows + revision change summary.
-
-CREATE TABLE IF NOT EXISTS test_revision_finding_diff_queue (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    test_id UUID NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-    from_revision_id UUID REFERENCES test_revisions(id) ON DELETE SET NULL,
-    to_revision_id UUID NOT NULL UNIQUE REFERENCES test_revisions(id) ON DELETE CASCADE,
-    status TEXT NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    reason TEXT NOT NULL CHECK (reason IN ('INGEST', 'BACKFILL', 'MANUAL')),
-    attempts INT NOT NULL DEFAULT 0,
-    last_error TEXT,
-    locked_at TIMESTAMPTZ,
-    locked_by TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at TIMESTAMPTZ
-);
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_finding_diff_queue_status
-    ON test_revision_finding_diff_queue(status, updated_at ASC);
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_finding_diff_queue_test
-    ON test_revision_finding_diff_queue(test_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS test_revision_change_summary (
-    to_revision_id UUID PRIMARY KEY REFERENCES test_revisions(id) ON DELETE CASCADE,
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    test_id UUID NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-    from_revision_id UUID REFERENCES test_revisions(id) ON DELETE SET NULL,
-    added_count INT NOT NULL DEFAULT 0,
-    removed_count INT NOT NULL DEFAULT 0,
-    unchanged_count INT NOT NULL DEFAULT 0,
-    reappeared_count INT NOT NULL DEFAULT 0,
-    status TEXT NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
-    computed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_change_summary_test
-    ON test_revision_change_summary(test_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_change_summary_project
-    ON test_revision_change_summary(project_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS test_revision_finding_diffs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    test_id UUID NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
-    from_revision_id UUID REFERENCES test_revisions(id) ON DELETE SET NULL,
-    to_revision_id UUID NOT NULL REFERENCES test_revisions(id) ON DELETE CASCADE,
-    finding_type TEXT NOT NULL CHECK (finding_type IN ('MALWARE')),
-    diff_type TEXT NOT NULL CHECK (diff_type IN ('ADDED', 'REMOVED', 'UNCHANGED', 'REAPPEARED')),
-    component_purl TEXT NOT NULL,
-    malware_purl TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_test_revision_finding_diffs_identity
-    ON test_revision_finding_diffs(to_revision_id, finding_type, component_purl, malware_purl);
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_finding_diffs_test_revision_type
-    ON test_revision_finding_diffs(test_id, to_revision_id, diff_type, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_test_revision_finding_diffs_project_revision
-    ON test_revision_finding_diffs(project_id, to_revision_id, created_at DESC);
-
--- END 018_test_revision_finding_diffs.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 019_reimport_system_actor_password_hash_hardening.up.sql
--- ---------------------------------------------------------------------
--- Ensure legacy system actor rows never keep a plaintext-like value in password_hash.
--- Runtime store bootstrap will replace empty/invalid hashes with fresh argon2id hash.
-UPDATE users
-SET password_hash = '',
-    updated_at = NOW()
-WHERE LOWER(email) = LOWER('system@ctwall.local')
-  AND (password_hash IS NULL OR password_hash NOT LIKE '$argon2id$%');
-
--- END 019_reimport_system_actor_password_hash_hardening.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 020_component_malware_findings_triage_fixed_status.up.sql
--- ---------------------------------------------------------------------
--- Replace legacy CLOSED triage status with FIXED for malware findings.
--- Alert group lifecycle still uses OPEN/ACKNOWLEDGED/CLOSED independently.
-
-ALTER TABLE component_malware_findings_triage
-    DROP CONSTRAINT IF EXISTS component_malware_findings_triage_status_check;
-
-ALTER TABLE component_malware_findings_triage
-    DROP CONSTRAINT IF EXISTS chk_component_malware_findings_triage_status;
-
-UPDATE component_malware_findings_triage
-SET status = 'FIXED'
-WHERE status = 'CLOSED';
-
-ALTER TABLE component_malware_findings_triage
-    ADD CONSTRAINT chk_component_malware_findings_triage_status
-    CHECK (status IN ('OPEN', 'RISK_ACCEPTED', 'FALSE_POSITIVE', 'FIXED'));
-
--- END 020_component_malware_findings_triage_fixed_status.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 021_alertmanager_all_receivers_project_scope.up.sql
--- ---------------------------------------------------------------------
--- Extend connector support to all Alertmanager v0.28.1 receiver types used by CTWall.
--- Switch connector config model to include explicit PROJECT scope.
--- Forward-compatibility note:
--- keep ALERTMANAGER_EXTERNAL allowed here as well, because some environments can
--- already contain this connector type before migration 031 is applied.
-
-ALTER TABLE connector_configs
-    ADD COLUMN IF NOT EXISTS config_schema_version INTEGER NOT NULL DEFAULT 1;
-
-ALTER TABLE connector_configs
-    DROP CONSTRAINT IF EXISTS connector_configs_connector_type_check;
-ALTER TABLE connector_configs
-    ADD CONSTRAINT connector_configs_connector_type_check
-        CHECK (connector_type IN (
-            'DISCORD',
-            'SMTP',
-            'MSTEAMSV2',
-            'JIRA',
-            'OPSGENIE',
-            'PAGERDUTY',
-            'PUSHOVER',
-            'ROCKETCHAT',
-            'SLACK',
-            'SNS',
-            'TELEGRAM',
-            'VICTOROPS',
-            'WEBEX',
-            'WEBHOOK',
-            'WECHAT',
-            'ALERTMANAGER_EXTERNAL'
-        ));
-
-ALTER TABLE connector_configs
-    DROP CONSTRAINT IF EXISTS connector_configs_scope_type_check;
-ALTER TABLE connector_configs
-    ADD CONSTRAINT connector_configs_scope_type_check
-        CHECK (scope_type IN ('GLOBAL', 'PROJECT', 'PRODUCT', 'SCOPE', 'TEST'));
-
-ALTER TABLE alert_connector_settings
-    DROP CONSTRAINT IF EXISTS alert_connector_settings_connector_type_check;
-ALTER TABLE alert_connector_settings
-    ADD CONSTRAINT alert_connector_settings_connector_type_check
-        CHECK (connector_type IN (
-            'DISCORD',
-            'SMTP',
-            'MSTEAMSV2',
-            'JIRA',
-            'OPSGENIE',
-            'PAGERDUTY',
-            'PUSHOVER',
-            'ROCKETCHAT',
-            'SLACK',
-            'SNS',
-            'TELEGRAM',
-            'VICTOROPS',
-            'WEBEX',
-            'WEBHOOK',
-            'WECHAT',
-            'ALERTMANAGER_EXTERNAL'
-        ));
-
-ALTER TABLE alert_routes
-    DROP CONSTRAINT IF EXISTS alert_routes_connector_type_check;
-ALTER TABLE alert_routes
-    ADD CONSTRAINT alert_routes_connector_type_check
-        CHECK (connector_type IN (
-            'DISCORD',
-            'SMTP',
-            'MSTEAMSV2',
-            'JIRA',
-            'OPSGENIE',
-            'PAGERDUTY',
-            'PUSHOVER',
-            'ROCKETCHAT',
-            'SLACK',
-            'SNS',
-            'TELEGRAM',
-            'VICTOROPS',
-            'WEBEX',
-            'WEBHOOK',
-            'WECHAT',
-            'ALERTMANAGER_EXTERNAL'
-        ));
-
--- END 021_alertmanager_all_receivers_project_scope.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 022_jira_native_dispatch_foundation.up.sql
--- ---------------------------------------------------------------------
--- Native Jira dispatch foundation:
--- - per-entity Jira settings (product/scope/test)
--- - Jira issue correlation mapping (idempotency + ownership)
--- - Jira delivery attempts history (observability)
-
-CREATE TABLE IF NOT EXISTS jira_entity_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    config_level TEXT NOT NULL CHECK (config_level IN ('PRODUCT', 'SCOPE', 'TEST')),
-    config_target_id UUID NOT NULL,
-    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    jira_project_key TEXT NOT NULL DEFAULT '',
-    issue_type TEXT NOT NULL DEFAULT '',
-    resolve_transition_name TEXT NULL,
-    labels JSONB NOT NULL DEFAULT '[]'::jsonb,
-    components JSONB NOT NULL DEFAULT '[]'::jsonb,
-    severity_to_priority_mapping JSONB NOT NULL DEFAULT '{}'::jsonb,
-    ticket_summary_template TEXT NOT NULL DEFAULT '',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT chk_jira_entity_settings_labels_array CHECK (jsonb_typeof(labels) = 'array'),
-    CONSTRAINT chk_jira_entity_settings_components_array CHECK (jsonb_typeof(components) = 'array'),
-    CONSTRAINT chk_jira_entity_settings_priority_object CHECK (jsonb_typeof(severity_to_priority_mapping) = 'object'),
-    UNIQUE (project_id, config_level, config_target_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_jira_entity_settings_project_level
-    ON jira_entity_settings (project_id, config_level, config_target_id);
-
-CREATE TABLE IF NOT EXISTS jira_issue_mappings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    config_level TEXT NOT NULL CHECK (config_level IN ('PRODUCT', 'SCOPE', 'TEST')),
-    config_target_id UUID NOT NULL,
-    alert_group_id UUID NOT NULL REFERENCES alert_groups(id) ON DELETE CASCADE,
-    dedup_rule_id UUID NULL REFERENCES alert_dedup_rules(id) ON DELETE SET NULL,
-    jira_issue_key TEXT NULL,
-    jira_issue_id TEXT NULL,
-    status TEXT NOT NULL CHECK (status IN ('OPEN', 'CLOSED', 'DEAD', 'SUPERSEDED')),
-    last_synced_at TIMESTAMPTZ NULL,
-    last_error TEXT NULL,
-    closed_at TIMESTAMPTZ NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Backward/partial-upgrade compatibility:
--- if legacy runs already inserted duplicated identity rows, keep the newest row
--- and remove older duplicates before adding unique identity index.
-WITH ranked AS (
-    SELECT
-        id,
-        ROW_NUMBER() OVER (
-            PARTITION BY
-                project_id,
-                config_level,
-                config_target_id,
-                alert_group_id,
-                COALESCE(dedup_rule_id, '00000000-0000-0000-0000-000000000000'::uuid)
-            ORDER BY updated_at DESC, created_at DESC, id DESC
-        ) AS rn
-    FROM jira_issue_mappings
-)
-DELETE FROM jira_issue_mappings m
-USING ranked r
-WHERE m.id = r.id
-  AND r.rn > 1;
-
-CREATE UNIQUE INDEX IF NOT EXISTS ux_jira_issue_mappings_identity
-    ON jira_issue_mappings (
-        project_id,
-        config_level,
-        config_target_id,
-        alert_group_id,
-        COALESCE(dedup_rule_id, '00000000-0000-0000-0000-000000000000'::uuid)
-    );
-
-CREATE INDEX IF NOT EXISTS idx_jira_issue_mappings_group_lookup
-    ON jira_issue_mappings (project_id, alert_group_id, status, updated_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_jira_issue_mappings_owner_lookup
-    ON jira_issue_mappings (project_id, config_level, config_target_id, status, updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS jira_delivery_attempts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    queue_job_id UUID NULL REFERENCES alert_dispatch_queue(id) ON DELETE SET NULL,
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    config_level TEXT NULL CHECK (config_level IN ('PRODUCT', 'SCOPE', 'TEST')),
-    config_target_id UUID NULL,
-    alert_group_id UUID NULL REFERENCES alert_groups(id) ON DELETE SET NULL,
-    dedup_rule_id UUID NULL REFERENCES alert_dedup_rules(id) ON DELETE SET NULL,
-    jira_issue_mapping_id UUID NULL REFERENCES jira_issue_mappings(id) ON DELETE SET NULL,
-    attempt_no INT NOT NULL DEFAULT 1,
-    action TEXT NOT NULL CHECK (action IN ('CREATE', 'UPDATE', 'RESOLVE', 'SUPERSEDE_CLOSE', 'NOOP')),
-    outcome TEXT NOT NULL CHECK (outcome IN ('SUCCESS', 'RETRY', 'DEAD', 'SKIPPED', 'FAILED')),
-    http_status INT NULL,
-    error_code TEXT NULL,
-    error_message TEXT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_jira_delivery_attempts_project_created
-    ON jira_delivery_attempts (project_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_jira_delivery_attempts_mapping
-    ON jira_delivery_attempts (jira_issue_mapping_id, created_at DESC)
-    WHERE jira_issue_mapping_id IS NOT NULL;
-
--- END 022_jira_native_dispatch_foundation.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 023_jira_dedup_threshold_and_metadata_cache.up.sql
--- ---------------------------------------------------------------------
--- Jira native phase 3:
--- - connector Jira dedup-rule binding
--- - dedup min severity threshold
--- - Jira metadata cache (DB-backed)
-
-ALTER TABLE alert_dedup_rules
-    ADD COLUMN IF NOT EXISTS min_severity TEXT NOT NULL DEFAULT 'INFO';
-
-UPDATE alert_dedup_rules
-SET min_severity = 'WARNING'
-WHERE min_severity = 'WARN';
-
-ALTER TABLE alert_dedup_rules
-    DROP CONSTRAINT IF EXISTS alert_dedup_rules_min_severity_check;
-ALTER TABLE alert_dedup_rules
-    ADD CONSTRAINT alert_dedup_rules_min_severity_check
-        CHECK (min_severity IN ('INFO', 'WARNING', 'ERROR'));
-
-ALTER TABLE alert_connector_settings
-    ADD COLUMN IF NOT EXISTS jira_dedup_rule_id UUID NULL
-        REFERENCES alert_dedup_rules(id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS idx_alert_connector_settings_jira_dedup_rule
-    ON alert_connector_settings (project_id, connector_type, jira_dedup_rule_id)
-    WHERE connector_type = 'JIRA';
-
-CREATE TABLE IF NOT EXISTS jira_metadata_cache (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    base_url_hash TEXT NOT NULL,
-    metadata_type TEXT NOT NULL CHECK (metadata_type IN ('PROJECTS', 'ISSUE_TYPES', 'COMPONENTS', 'PRIORITIES', 'TRANSITIONS')),
-    metadata_scope_key TEXT NOT NULL DEFAULT '',
-    payload_json JSONB NOT NULL DEFAULT '[]'::jsonb,
-    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (project_id, base_url_hash, metadata_type, metadata_scope_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_jira_metadata_cache_lookup
-    ON jira_metadata_cache (project_id, base_url_hash, metadata_type, metadata_scope_key);
-
--- END 023_jira_dedup_threshold_and_metadata_cache.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 024_users_nickname_required.up.sql
--- ---------------------------------------------------------------------
-ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS nickname TEXT;
-
-UPDATE users
-SET nickname = CASE
-    WHEN NULLIF(BTRIM(full_name), '') IS NOT NULL THEN BTRIM(full_name)
-    WHEN NULLIF(BTRIM(split_part(email, '@', 1)), '') IS NOT NULL THEN BTRIM(split_part(email, '@', 1))
-    ELSE 'user-' || substring(id::text, 1, 8)
-END
-WHERE nickname IS NULL OR NULLIF(BTRIM(nickname), '') IS NULL;
-
-DO $$
+--
+-- Name: ctwall_products_validate_owner_group(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ctwall_products_validate_owner_group() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    owner_project_id UUID;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_users_nickname'
-    ) THEN
-        ALTER TABLE users
-            ADD CONSTRAINT chk_users_nickname
-            CHECK (char_length(BTRIM(nickname)) BETWEEN 1 AND 64);
+    IF NEW.owner_group_id IS NULL THEN
+        RETURN NEW;
     END IF;
-END $$;
 
-ALTER TABLE users
-    ALTER COLUMN nickname SET NOT NULL;
+    SELECT ug.project_id
+    INTO owner_project_id
+    FROM user_groups ug
+    WHERE ug.id = NEW.owner_group_id;
 
-ALTER TABLE users
-    ALTER COLUMN nickname SET DEFAULT 'user';
+    IF owner_project_id IS NULL THEN
+        RAISE EXCEPTION 'Owner group not found'
+            USING ERRCODE = '23503';
+    END IF;
+    IF owner_project_id <> NEW.project_id THEN
+        RAISE EXCEPTION 'Owner group must belong to the same project as product'
+            USING ERRCODE = '23514';
+    END IF;
 
--- END 024_users_nickname_required.up.sql
+    IF NEW.created_by IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+           FROM user_group_members gm
+           WHERE gm.group_id = NEW.owner_group_id
+             AND gm.user_id = NEW.created_by
+             AND gm.role = 'OWNER'
+       ) THEN
+        RAISE EXCEPTION 'Product creator must be OWNER in owner group'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
 
--- ---------------------------------------------------------------------
--- BEGIN 025_component_analysis_schedule_default_6h.up.sql
--- ---------------------------------------------------------------------
--- Normalize component analysis scheduler default interval to 6h.
--- Keep explicit custom intervals untouched; only move legacy 24h default rows.
 
-ALTER TABLE component_analysis_malware_schedule
-    ALTER COLUMN interval_seconds SET DEFAULT 21600;
+--
+--
+-- Name: alert_connector_settings; Type: TABLE; Schema: public; Owner: -
+--
 
-UPDATE component_analysis_malware_schedule
-SET interval_seconds = 21600,
-    updated_at = NOW()
-WHERE id = 1
-  AND interval_seconds = 86400;
-
--- END 025_component_analysis_schedule_default_6h.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 026_jira_issue_fields_and_open_transition.up.sql
--- ---------------------------------------------------------------------
--- Jira settings enhancements:
--- - optional open transition name per entity settings
--- - dynamic Jira required issue fields payload (JSON object)
--- - metadata cache type for ISSUE_FIELDS
-
-ALTER TABLE jira_entity_settings
-    ADD COLUMN IF NOT EXISTS open_transition_name TEXT NULL;
-
-ALTER TABLE jira_entity_settings
-    ADD COLUMN IF NOT EXISTS issue_fields_json JSONB NOT NULL DEFAULT '{}'::jsonb;
-
-ALTER TABLE jira_entity_settings
-    DROP CONSTRAINT IF EXISTS chk_jira_entity_settings_issue_fields_object;
-ALTER TABLE jira_entity_settings
-    ADD CONSTRAINT chk_jira_entity_settings_issue_fields_object
-        CHECK (jsonb_typeof(issue_fields_json) = 'object');
-
-ALTER TABLE jira_metadata_cache
-    DROP CONSTRAINT IF EXISTS jira_metadata_cache_metadata_type_check;
-ALTER TABLE jira_metadata_cache
-    ADD CONSTRAINT jira_metadata_cache_metadata_type_check
-        CHECK (metadata_type IN ('PROJECTS', 'ISSUE_TYPES', 'COMPONENTS', 'PRIORITIES', 'ISSUES', 'TRANSITIONS', 'ISSUE_FIELDS'));
-
--- END 026_jira_issue_fields_and_open_transition.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 027_remove_seed_results_path.up.sql
--- ---------------------------------------------------------------------
--- Remove legacy seed-only results path from OSV API test source scanners.
--- This path is not part of production OSV integration and should not appear in runtime config/UI.
-
-UPDATE source_scanners AS s
-SET results_path = NULL
-FROM scan_malware_source AS src
-WHERE s.source_id = src.id
-  AND src.source_type = 'OSV_API'
-  AND src.name = 'Seed OSV Source'
-  AND s.results_path = '/seed/results';
-
--- END 027_remove_seed_results_path.up.sql
-
--- ---------------------------------------------------------------------
--- BEGIN 028_remove_seed_osv_source.up.sql
--- ---------------------------------------------------------------------
--- Remove legacy seed-only OSV API source from runtime data model.
--- Seed source was test scaffolding and should not be exposed in GUI/backend sources list.
-
-DELETE FROM source_malware_input_component_results
-WHERE source_id IN (
-    SELECT id
-    FROM scan_malware_source
-    WHERE source_type = 'OSV_API'
-      AND name = 'Seed OSV Source'
+CREATE TABLE public.alert_connector_settings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    connector_type text NOT NULL,
+    is_enabled boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    jira_dedup_rule_id uuid,
+    CONSTRAINT alert_connector_settings_connector_type_check CHECK ((connector_type = ANY (ARRAY['DISCORD'::text, 'SMTP'::text, 'MSTEAMSV2'::text, 'JIRA'::text, 'ALERTMANAGER_EXTERNAL'::text, 'OPSGENIE'::text, 'PAGERDUTY'::text, 'PUSHOVER'::text, 'ROCKETCHAT'::text, 'SLACK'::text, 'SNS'::text, 'TELEGRAM'::text, 'VICTOROPS'::text, 'WEBEX'::text, 'WEBHOOK'::text, 'WECHAT'::text])))
 );
 
-DELETE FROM source_malware_input_queue
-WHERE scanner_id IN (
-    SELECT sc.id
-    FROM source_scanners sc
-    JOIN scan_malware_source src ON src.id = sc.source_id
-    WHERE src.source_type = 'OSV_API'
-      AND src.name = 'Seed OSV Source'
+
+--
+-- Name: alert_dedup_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alert_dedup_rules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    alert_type text NOT NULL,
+    dedup_scope text NOT NULL,
+    product_id uuid,
+    scope_id uuid,
+    test_id uuid,
+    enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    min_severity text DEFAULT 'INFO'::text NOT NULL,
+    CONSTRAINT alert_dedup_rules_dedup_scope_check CHECK ((dedup_scope = ANY (ARRAY['GLOBAL'::text, 'PRODUCT'::text, 'SCOPE'::text, 'TEST'::text]))),
+    CONSTRAINT alert_dedup_rules_min_severity_check CHECK ((min_severity = ANY (ARRAY['INFO'::text, 'WARNING'::text, 'ERROR'::text]))),
+    CONSTRAINT chk_alert_dedup_rules_scope_target CHECK ((((dedup_scope = 'GLOBAL'::text) AND (product_id IS NULL) AND (scope_id IS NULL) AND (test_id IS NULL)) OR ((dedup_scope = 'PRODUCT'::text) AND (product_id IS NOT NULL) AND (scope_id IS NULL) AND (test_id IS NULL)) OR ((dedup_scope = 'SCOPE'::text) AND (product_id IS NULL) AND (scope_id IS NOT NULL) AND (test_id IS NULL)) OR ((dedup_scope = 'TEST'::text) AND (product_id IS NULL) AND (scope_id IS NULL) AND (test_id IS NOT NULL))))
 );
 
-DELETE FROM source_scanners
-WHERE source_id IN (
-    SELECT id
-    FROM scan_malware_source
-    WHERE source_type = 'OSV_API'
-      AND name = 'Seed OSV Source'
+
+--
+-- Name: alert_detection_modes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alert_detection_modes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    mode text NOT NULL,
+    enabled boolean NOT NULL,
+    severity text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alert_detection_modes_mode_check CHECK ((mode = ANY (ARRAY['PURL_VERSION_SMART'::text, 'PURL_CONTAINS_PREFIX'::text]))),
+    CONSTRAINT alert_detection_modes_severity_check CHECK ((severity = ANY (ARRAY['INFO'::text, 'WARN'::text, 'ERROR'::text])))
 );
 
-DELETE FROM scan_malware_source
-WHERE source_type = 'OSV_API'
-  AND name = 'Seed OSV Source';
 
--- END 028_remove_seed_osv_source.up.sql
+--
+-- Name: alert_dispatch_queue; Type: TABLE; Schema: public; Owner: -
+--
 
--- ---------------------------------------------------------------------
--- BEGIN 029_jira_metadata_cache_add_issues_type.up.sql
--- ---------------------------------------------------------------------
-ALTER TABLE jira_metadata_cache
-    DROP CONSTRAINT IF EXISTS jira_metadata_cache_metadata_type_check;
+CREATE TABLE public.alert_dispatch_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    message_type text NOT NULL,
+    event_state text,
+    project_id uuid,
+    group_id uuid,
+    payload_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    state text NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone,
+    locked_at timestamp with time zone,
+    locked_by text,
+    last_error_code text,
+    last_error_message text,
+    done_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alert_dispatch_queue_event_state_check CHECK ((event_state = ANY (ARRAY['FIRING'::text, 'RESOLVED'::text]))),
+    CONSTRAINT alert_dispatch_queue_message_type_check CHECK ((message_type = ANY (ARRAY['CONFIG_APPLY'::text, 'ALERT_EVENT'::text]))),
+    CONSTRAINT alert_dispatch_queue_state_check CHECK ((state = ANY (ARRAY['PENDING'::text, 'IN_FLIGHT'::text, 'RETRY'::text, 'DONE'::text, 'DEAD'::text]))),
+    CONSTRAINT chk_alert_dispatch_event_fields CHECK ((((message_type = 'ALERT_EVENT'::text) AND (event_state IS NOT NULL) AND (project_id IS NOT NULL) AND (group_id IS NOT NULL)) OR ((message_type = 'CONFIG_APPLY'::text) AND (event_state IS NULL))))
+);
 
-ALTER TABLE jira_metadata_cache
-    ADD CONSTRAINT jira_metadata_cache_metadata_type_check
-        CHECK (metadata_type IN ('PROJECTS', 'ISSUE_TYPES', 'COMPONENTS', 'PRIORITIES', 'ISSUES', 'TRANSITIONS', 'ISSUE_FIELDS'));
 
--- END 029_jira_metadata_cache_add_issues_type.up.sql
+--
+-- Name: alert_groups; Type: TABLE; Schema: public; Owner: -
+--
 
--- ---------------------------------------------------------------------
--- BEGIN 030_jira_component_lifecycle_and_reopen_action.up.sql
--- ---------------------------------------------------------------------
--- Jira auto lifecycle per component:
--- - correlate mappings by (project_id, test_id, component_purl)
--- - keep effective owner metadata for observability
--- - allow REOPEN delivery action
+CREATE TABLE public.alert_groups (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    severity text NOT NULL,
+    category text NOT NULL,
+    type text NOT NULL,
+    status text NOT NULL,
+    group_key text NOT NULL,
+    title text NOT NULL,
+    entity_ref text,
+    occurrences integer DEFAULT 1 NOT NULL,
+    first_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_seen_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_notified_at timestamp with time zone,
+    acknowledged_at timestamp with time zone,
+    acknowledged_by uuid,
+    closed_at timestamp with time zone,
+    closed_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alert_groups_severity_check CHECK ((severity = ANY (ARRAY['INFO'::text, 'WARN'::text, 'ERROR'::text]))),
+    CONSTRAINT alert_groups_status_check CHECK ((status = ANY (ARRAY['OPEN'::text, 'ACKNOWLEDGED'::text, 'CLOSED'::text])))
+);
 
-ALTER TABLE jira_issue_mappings
-    ADD COLUMN IF NOT EXISTS test_id UUID NULL REFERENCES tests(id) ON DELETE CASCADE;
 
-ALTER TABLE jira_issue_mappings
-    ADD COLUMN IF NOT EXISTS component_purl TEXT NULL;
+--
+-- Name: alert_occurrences; Type: TABLE; Schema: public; Owner: -
+--
 
-ALTER TABLE jira_issue_mappings
-    ADD COLUMN IF NOT EXISTS effective_config_level TEXT NULL;
+CREATE TABLE public.alert_occurrences (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    group_id uuid NOT NULL,
+    occurred_at timestamp with time zone DEFAULT now() NOT NULL,
+    product_id uuid,
+    scope_id uuid,
+    test_id uuid,
+    entity_ref text,
+    details jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
-ALTER TABLE jira_issue_mappings
-    ADD COLUMN IF NOT EXISTS effective_config_target_id UUID NULL;
 
-ALTER TABLE jira_issue_mappings
-    DROP CONSTRAINT IF EXISTS jira_issue_mappings_effective_config_level_check;
-ALTER TABLE jira_issue_mappings
-    ADD CONSTRAINT jira_issue_mappings_effective_config_level_check
-        CHECK (
-            effective_config_level IS NULL
-            OR effective_config_level IN ('PRODUCT', 'SCOPE', 'TEST')
-        );
+--
+-- Name: alert_routes; Type: TABLE; Schema: public; Owner: -
+--
 
-CREATE INDEX IF NOT EXISTS idx_jira_issue_mappings_component_lookup
-    ON jira_issue_mappings (project_id, test_id, component_purl, updated_at DESC)
-    WHERE test_id IS NOT NULL AND component_purl IS NOT NULL;
+CREATE TABLE public.alert_routes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    connector_type text NOT NULL,
+    target_type text NOT NULL,
+    target_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT alert_routes_connector_type_check CHECK ((connector_type = ANY (ARRAY['DISCORD'::text, 'SMTP'::text, 'MSTEAMSV2'::text, 'JIRA'::text, 'ALERTMANAGER_EXTERNAL'::text, 'OPSGENIE'::text, 'PAGERDUTY'::text, 'PUSHOVER'::text, 'ROCKETCHAT'::text, 'SLACK'::text, 'SNS'::text, 'TELEGRAM'::text, 'VICTOROPS'::text, 'WEBEX'::text, 'WEBHOOK'::text, 'WECHAT'::text]))),
+    CONSTRAINT alert_routes_target_type_check CHECK ((target_type = ANY (ARRAY['PRODUCT'::text, 'SCOPE'::text, 'TEST'::text])))
+);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_jira_issue_mappings_open_component
-    ON jira_issue_mappings (project_id, test_id, component_purl)
-    WHERE status = 'OPEN' AND test_id IS NOT NULL AND component_purl IS NOT NULL;
 
-ALTER TABLE jira_delivery_attempts
-    DROP CONSTRAINT IF EXISTS jira_delivery_attempts_action_check;
-ALTER TABLE jira_delivery_attempts
-    ADD CONSTRAINT jira_delivery_attempts_action_check
-        CHECK (action IN ('CREATE', 'UPDATE', 'REOPEN', 'RESOLVE', 'SUPERSEDE_CLOSE', 'NOOP'));
+--
+-- Name: api_tokens; Type: TABLE; Schema: public; Owner: -
+--
 
--- END 030_jira_component_lifecycle_and_reopen_action.up.sql
+CREATE TABLE public.api_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    name text NOT NULL,
+    token_hash text NOT NULL,
+    last_used_at timestamp with time zone,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now()
+);
 
--- ---------------------------------------------------------------------
--- BEGIN 031_alertmanager_external_connector_type.up.sql
--- ---------------------------------------------------------------------
--- Add external Alertmanager connector type as project-level connector.
 
-ALTER TABLE connector_configs
-    DROP CONSTRAINT IF EXISTS connector_configs_connector_type_check;
-ALTER TABLE connector_configs
-    ADD CONSTRAINT connector_configs_connector_type_check
-        CHECK (connector_type IN (
-            'DISCORD',
-            'SMTP',
-            'MSTEAMSV2',
-            'JIRA',
-            'ALERTMANAGER_EXTERNAL',
-            'OPSGENIE',
-            'PAGERDUTY',
-            'PUSHOVER',
-            'ROCKETCHAT',
-            'SLACK',
-            'SNS',
-            'TELEGRAM',
-            'VICTOROPS',
-            'WEBEX',
-            'WEBHOOK',
-            'WECHAT'
-        ));
+--
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
+--
 
-ALTER TABLE alert_connector_settings
-    DROP CONSTRAINT IF EXISTS alert_connector_settings_connector_type_check;
-ALTER TABLE alert_connector_settings
-    ADD CONSTRAINT alert_connector_settings_connector_type_check
-        CHECK (connector_type IN (
-            'DISCORD',
-            'SMTP',
-            'MSTEAMSV2',
-            'JIRA',
-            'ALERTMANAGER_EXTERNAL',
-            'OPSGENIE',
-            'PAGERDUTY',
-            'PUSHOVER',
-            'ROCKETCHAT',
-            'SLACK',
-            'SNS',
-            'TELEGRAM',
-            'VICTOROPS',
-            'WEBEX',
-            'WEBHOOK',
-            'WECHAT'
-        ));
+CREATE TABLE public.audit_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    actor_id uuid,
+    action text NOT NULL,
+    entity_type text NOT NULL,
+    entity_id uuid,
+    details jsonb,
+    ip_address text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
-ALTER TABLE alert_routes
-    DROP CONSTRAINT IF EXISTS alert_routes_connector_type_check;
-ALTER TABLE alert_routes
-    ADD CONSTRAINT alert_routes_connector_type_check
-        CHECK (connector_type IN (
-            'DISCORD',
-            'SMTP',
-            'MSTEAMSV2',
-            'JIRA',
-            'ALERTMANAGER_EXTERNAL',
-            'OPSGENIE',
-            'PAGERDUTY',
-            'PUSHOVER',
-            'ROCKETCHAT',
-            'SLACK',
-            'SNS',
-            'TELEGRAM',
-            'VICTOROPS',
-            'WEBEX',
-            'WEBHOOK',
-            'WECHAT'
-        ));
 
--- END 031_alertmanager_external_connector_type.up.sql
+--
+-- Name: component_analysis_malware_component_state; Type: TABLE; Schema: public; Owner: -
+--
 
--- ---------------------------------------------------------------------
--- BEGIN 032_normalize_malware_alert_category_type.up.sql
--- ---------------------------------------------------------------------
--- Normalize legacy malware alert typing used by old seed data.
--- Target canonical values:
---   category = 'malware'
---   type     = 'malware.detected'
+CREATE TABLE public.component_analysis_malware_component_state (
+    component_purl text CONSTRAINT component_analysis_malware_component_st_component_purl_not_null NOT NULL,
+    scanned_at timestamp with time zone DEFAULT now() NOT NULL,
+    valid_until timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
--- 1) Normalize alert dedup rules from legacy 'MALWARE' -> 'malware.detected'.
---    Resolve potential uniqueness collisions by removing legacy duplicates first.
-DELETE FROM alert_dedup_rules legacy
-USING alert_dedup_rules canonical
-WHERE legacy.alert_type = 'MALWARE'
-  AND canonical.alert_type = 'malware.detected'
-  AND legacy.project_id = canonical.project_id
-  AND legacy.dedup_scope = canonical.dedup_scope
-  AND COALESCE(legacy.product_id, '00000000-0000-0000-0000-000000000000'::uuid)
-      = COALESCE(canonical.product_id, '00000000-0000-0000-0000-000000000000'::uuid)
-  AND COALESCE(legacy.scope_id, '00000000-0000-0000-0000-000000000000'::uuid)
-      = COALESCE(canonical.scope_id, '00000000-0000-0000-0000-000000000000'::uuid)
-  AND COALESCE(legacy.test_id, '00000000-0000-0000-0000-000000000000'::uuid)
-      = COALESCE(canonical.test_id, '00000000-0000-0000-0000-000000000000'::uuid);
 
-UPDATE alert_dedup_rules
-SET alert_type = 'malware.detected',
-    updated_at = NOW()
-WHERE alert_type = 'MALWARE';
+--
+-- Name: TABLE component_analysis_malware_component_state; Type: COMMENT; Schema: public; Owner: -
+--
 
--- 2) Normalize alert groups from legacy type/category.
-UPDATE alert_groups
-SET category = 'malware',
-    type = 'malware.detected',
-    updated_at = NOW()
-WHERE type = 'MALWARE'
-   OR (category = 'security' AND title = 'Seed malware alert group');
+COMMENT ON TABLE public.component_analysis_malware_component_state IS 'Tracks the latest component malware mapping run per component PURL (even if no findings).';
 
--- END 032_normalize_malware_alert_category_type.up.sql
 
--- ---------------------------------------------------------------------
--- BEGIN 033_jira_mappings_legacy_identity_partial_unique.up.sql
--- ---------------------------------------------------------------------
--- Jira component lifecycle allows multiple mappings per alert group/config identity.
--- Keep legacy uniqueness only for rows without component context.
+--
+-- Name: component_analysis_malware_findings; Type: TABLE; Schema: public; Owner: -
+--
 
-DROP INDEX IF EXISTS ux_jira_issue_mappings_identity;
+CREATE TABLE public.component_analysis_malware_findings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    component_purl text NOT NULL,
+    malware_purl text NOT NULL,
+    source_malware_input_result_id uuid CONSTRAINT component_analysis_malware__source_malware_input_resul_not_null NOT NULL,
+    match_type text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT component_analysis_malware_findings_match_type_check CHECK ((match_type = ANY (ARRAY['EXACT'::text, 'CONTAINS_PREFIX'::text])))
+);
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_jira_issue_mappings_legacy_identity
-    ON jira_issue_mappings (
-        project_id,
-        config_level,
-        config_target_id,
-        alert_group_id,
-        COALESCE(dedup_rule_id, '00000000-0000-0000-0000-000000000000'::uuid)
-    )
-    WHERE test_id IS NULL
-      AND (component_purl IS NULL OR BTRIM(component_purl) = '');
 
--- END 033_jira_mappings_legacy_identity_partial_unique.up.sql
+--
+-- Name: TABLE component_analysis_malware_findings; Type: COMMENT; Schema: public; Owner: -
+--
 
--- ---------------------------------------------------------------------
--- BEGIN 034_drop_legacy_integrations_table.up.sql
--- ---------------------------------------------------------------------
--- Legacy integrations table is no longer used.
--- Connector configuration is stored in connector_configs.
-DROP TABLE IF EXISTS integrations;
+COMMENT ON TABLE public.component_analysis_malware_findings IS 'Mapping between SBOM component PURLs and malware input PURLs.';
 
--- END 034_drop_legacy_integrations_table.up.sql
 
--- ---------------------------------------------------------------------
--- BEGIN 035_jira_entity_settings_retry_policy.up.sql
--- ---------------------------------------------------------------------
--- Jira per-entity retry policy for native dispatch retries.
-ALTER TABLE jira_entity_settings
-    ADD COLUMN IF NOT EXISTS delivery_retry_attempts INTEGER NOT NULL DEFAULT 0,
-    ADD COLUMN IF NOT EXISTS delivery_retry_backoff_seconds INTEGER NOT NULL DEFAULT 10;
+--
+-- Name: component_analysis_malware_queue; Type: TABLE; Schema: public; Owner: -
+--
 
-ALTER TABLE jira_entity_settings
-    DROP CONSTRAINT IF EXISTS chk_jira_entity_settings_delivery_retry_attempts_range;
-ALTER TABLE jira_entity_settings
-    ADD CONSTRAINT chk_jira_entity_settings_delivery_retry_attempts_range
-        CHECK (delivery_retry_attempts >= 0 AND delivery_retry_attempts <= 20);
+CREATE TABLE public.component_analysis_malware_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    component_purl text NOT NULL,
+    status text DEFAULT 'PENDING'::text NOT NULL,
+    reason text DEFAULT 'SCHEDULED'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    locked_at timestamp with time zone,
+    locked_by text,
+    scheduled_for timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT component_analysis_malware_queue_reason_check CHECK ((reason = ANY (ARRAY['SCHEDULED'::text, 'MANUAL'::text, 'BACKFILL'::text]))),
+    CONSTRAINT component_analysis_malware_queue_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text, 'COMPLETED'::text, 'FAILED'::text])))
+);
 
-ALTER TABLE jira_entity_settings
-    DROP CONSTRAINT IF EXISTS chk_jira_entity_settings_delivery_retry_backoff_range;
-ALTER TABLE jira_entity_settings
-    ADD CONSTRAINT chk_jira_entity_settings_delivery_retry_backoff_range
-        CHECK (delivery_retry_backoff_seconds >= 1 AND delivery_retry_backoff_seconds <= 3600);
 
--- END 035_jira_entity_settings_retry_policy.up.sql
+--
+-- Name: TABLE component_analysis_malware_queue; Type: COMMENT; Schema: public; Owner: -
+--
 
--- ---------------------------------------------------------------------
--- BEGIN 036_components_json_defaults_and_backfill.up.sql
--- ---------------------------------------------------------------------
--- Ensure components JSON fields are never NULL for API scans and downstream processing.
--- Backfill legacy NULL rows.
-UPDATE components
-SET licenses = '[]'::jsonb
-WHERE licenses IS NULL;
+COMMENT ON TABLE public.component_analysis_malware_queue IS 'Queue of component PURL mapping runs to malware input results.';
 
-UPDATE components
-SET properties = '{}'::jsonb
-WHERE properties IS NULL;
 
--- Set defaults for future inserts.
-ALTER TABLE components
-    ALTER COLUMN licenses SET DEFAULT '[]'::jsonb,
-    ALTER COLUMN properties SET DEFAULT '{}'::jsonb;
+--
+-- Name: component_analysis_malware_schedule; Type: TABLE; Schema: public; Owner: -
+--
 
--- END 036_components_json_defaults_and_backfill.up.sql
+CREATE TABLE public.component_analysis_malware_schedule (
+    id integer NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    interval_seconds integer DEFAULT 21600 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT component_analysis_malware_schedule_id_check CHECK ((id = 1)),
+    CONSTRAINT component_analysis_malware_schedule_interval_seconds_check CHECK ((interval_seconds >= 0))
+);
+
+
+--
+-- Name: TABLE component_analysis_malware_schedule; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.component_analysis_malware_schedule IS 'Runtime configuration for scheduled component malware mapping re-analysis.';
+
+
+--
+-- Name: component_malware_findings_triage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.component_malware_findings_triage (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    test_id uuid NOT NULL,
+    component_purl text NOT NULL,
+    malware_purl text NOT NULL,
+    status text NOT NULL,
+    priority text,
+    reason text,
+    expires_at timestamp with time zone,
+    author_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_component_malware_findings_triage_status CHECK ((status = ANY (ARRAY['OPEN'::text, 'RISK_ACCEPTED'::text, 'FALSE_POSITIVE'::text, 'FIXED'::text]))),
+    CONSTRAINT component_malware_findings_triage_priority_check CHECK ((priority = ANY (ARRAY['P1'::text, 'P2'::text, 'P3'::text, 'P4'::text])))
+);
+
+
+--
+-- Name: component_overrides; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.component_overrides (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_id uuid NOT NULL,
+    purl_pattern text NOT NULL,
+    status text NOT NULL,
+    reason text,
+    comment text,
+    author_id uuid,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT component_overrides_status_check CHECK ((status = ANY (ARRAY['APPROVED'::text, 'WARNING'::text, 'REJECTED'::text])))
+);
+
+
+--
+-- Name: TABLE component_overrides; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.component_overrides IS 'Stores triage decisions (Approved/Rejected) that persist across SBOM uploads for a Test.';
+
+
+--
+-- Name: components; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.components (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    revision_id uuid NOT NULL,
+    purl text NOT NULL,
+    pkg_name text NOT NULL,
+    version text NOT NULL,
+    pkg_type text NOT NULL,
+    pkg_namespace text,
+    sbom_type text NOT NULL,
+    publisher text,
+    supplier text,
+    licenses jsonb DEFAULT '[]'::jsonb,
+    properties jsonb DEFAULT '{}'::jsonb,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: connector_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.connector_configs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    connector_type text NOT NULL,
+    scope_type text DEFAULT 'GLOBAL'::text NOT NULL,
+    scope_id uuid,
+    config_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    is_enabled boolean DEFAULT false NOT NULL,
+    last_test_status text DEFAULT 'NOT_CONFIGURED'::text NOT NULL,
+    last_test_at timestamp with time zone,
+    last_test_message text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    config_schema_version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT chk_connector_scope_ref CHECK ((((scope_type = 'GLOBAL'::text) AND (scope_id IS NULL)) OR ((scope_type <> 'GLOBAL'::text) AND (scope_id IS NOT NULL)))),
+    CONSTRAINT connector_configs_connector_type_check CHECK ((connector_type = ANY (ARRAY['DISCORD'::text, 'SMTP'::text, 'MSTEAMSV2'::text, 'JIRA'::text, 'ALERTMANAGER_EXTERNAL'::text, 'OPSGENIE'::text, 'PAGERDUTY'::text, 'PUSHOVER'::text, 'ROCKETCHAT'::text, 'SLACK'::text, 'SNS'::text, 'TELEGRAM'::text, 'VICTOROPS'::text, 'WEBEX'::text, 'WEBHOOK'::text, 'WECHAT'::text]))),
+    CONSTRAINT connector_configs_last_test_status_check CHECK ((last_test_status = ANY (ARRAY['NOT_CONFIGURED'::text, 'PASSED'::text, 'FAILED'::text]))),
+    CONSTRAINT connector_configs_scope_type_check CHECK ((scope_type = ANY (ARRAY['GLOBAL'::text, 'PROJECT'::text, 'PRODUCT'::text, 'SCOPE'::text, 'TEST'::text])))
+);
+
+
+--
+-- Name: ingest_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ingest_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    product_id uuid,
+    scope_id uuid,
+    test_id uuid,
+    sbom_sha256 character(64) NOT NULL,
+    sbom_standard text NOT NULL,
+    sbom_spec_version text DEFAULT 'unknown'::text NOT NULL,
+    sbom_producer text DEFAULT 'other'::text NOT NULL,
+    tags jsonb DEFAULT '[]'::jsonb NOT NULL,
+    metadata_json jsonb,
+    content_type text DEFAULT ''::text NOT NULL,
+    is_gzip boolean DEFAULT false NOT NULL,
+    components_count integer DEFAULT 0 NOT NULL,
+    processing_stage text DEFAULT 'RECEIVED'::text NOT NULL,
+    status text NOT NULL,
+    error_message text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT ingest_queue_processing_stage_check CHECK ((processing_stage = ANY (ARRAY['RECEIVED'::text, 'VALIDATING'::text, 'PARSING'::text, 'ANALYZING'::text, 'STORING'::text, 'REVISIONING'::text, 'COMPLETED'::text, 'FAILED'::text]))),
+    CONSTRAINT ingest_queue_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text, 'COMPLETED'::text, 'FAILED'::text])))
+);
+
+
+--
+-- Name: TABLE ingest_queue; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.ingest_queue IS 'Durable ingest buffer for SBOM uploads and retry.';
+
+
+--
+-- Name: jira_delivery_attempts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jira_delivery_attempts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    queue_job_id uuid,
+    project_id uuid NOT NULL,
+    config_level text,
+    config_target_id uuid,
+    alert_group_id uuid,
+    dedup_rule_id uuid,
+    jira_issue_mapping_id uuid,
+    attempt_no integer DEFAULT 1 NOT NULL,
+    action text NOT NULL,
+    outcome text NOT NULL,
+    http_status integer,
+    error_code text,
+    error_message text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT jira_delivery_attempts_action_check CHECK ((action = ANY (ARRAY['CREATE'::text, 'UPDATE'::text, 'REOPEN'::text, 'RESOLVE'::text, 'SUPERSEDE_CLOSE'::text, 'NOOP'::text]))),
+    CONSTRAINT jira_delivery_attempts_config_level_check CHECK ((config_level = ANY (ARRAY['PRODUCT'::text, 'SCOPE'::text, 'TEST'::text]))),
+    CONSTRAINT jira_delivery_attempts_outcome_check CHECK ((outcome = ANY (ARRAY['SUCCESS'::text, 'RETRY'::text, 'DEAD'::text, 'SKIPPED'::text, 'FAILED'::text])))
+);
+
+
+--
+-- Name: jira_entity_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jira_entity_settings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    config_level text NOT NULL,
+    config_target_id uuid NOT NULL,
+    is_enabled boolean DEFAULT false NOT NULL,
+    jira_project_key text DEFAULT ''::text NOT NULL,
+    issue_type text DEFAULT ''::text NOT NULL,
+    resolve_transition_name text,
+    labels jsonb DEFAULT '[]'::jsonb NOT NULL,
+    components jsonb DEFAULT '[]'::jsonb NOT NULL,
+    severity_to_priority_mapping jsonb DEFAULT '{}'::jsonb NOT NULL,
+    ticket_summary_template text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    open_transition_name text,
+    issue_fields_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    delivery_retry_attempts integer DEFAULT 0 NOT NULL,
+    delivery_retry_backoff_seconds integer DEFAULT 10 NOT NULL,
+    CONSTRAINT chk_jira_entity_settings_components_array CHECK ((jsonb_typeof(components) = 'array'::text)),
+    CONSTRAINT chk_jira_entity_settings_delivery_retry_attempts_range CHECK (((delivery_retry_attempts >= 0) AND (delivery_retry_attempts <= 20))),
+    CONSTRAINT chk_jira_entity_settings_delivery_retry_backoff_range CHECK (((delivery_retry_backoff_seconds >= 1) AND (delivery_retry_backoff_seconds <= 3600))),
+    CONSTRAINT chk_jira_entity_settings_issue_fields_object CHECK ((jsonb_typeof(issue_fields_json) = 'object'::text)),
+    CONSTRAINT chk_jira_entity_settings_labels_array CHECK ((jsonb_typeof(labels) = 'array'::text)),
+    CONSTRAINT chk_jira_entity_settings_priority_object CHECK ((jsonb_typeof(severity_to_priority_mapping) = 'object'::text)),
+    CONSTRAINT jira_entity_settings_config_level_check CHECK ((config_level = ANY (ARRAY['PRODUCT'::text, 'SCOPE'::text, 'TEST'::text])))
+);
+
+
+--
+-- Name: jira_issue_mappings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jira_issue_mappings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    config_level text NOT NULL,
+    config_target_id uuid NOT NULL,
+    alert_group_id uuid NOT NULL,
+    dedup_rule_id uuid,
+    jira_issue_key text,
+    jira_issue_id text,
+    status text NOT NULL,
+    last_synced_at timestamp with time zone,
+    last_error text,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    test_id uuid,
+    component_purl text,
+    effective_config_level text,
+    effective_config_target_id uuid,
+    CONSTRAINT jira_issue_mappings_config_level_check CHECK ((config_level = ANY (ARRAY['PRODUCT'::text, 'SCOPE'::text, 'TEST'::text]))),
+    CONSTRAINT jira_issue_mappings_effective_config_level_check CHECK (((effective_config_level IS NULL) OR (effective_config_level = ANY (ARRAY['PRODUCT'::text, 'SCOPE'::text, 'TEST'::text])))),
+    CONSTRAINT jira_issue_mappings_status_check CHECK ((status = ANY (ARRAY['OPEN'::text, 'CLOSED'::text, 'DEAD'::text, 'SUPERSEDED'::text])))
+);
+
+
+--
+-- Name: jira_metadata_cache; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.jira_metadata_cache (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    base_url_hash text NOT NULL,
+    metadata_type text NOT NULL,
+    metadata_scope_key text DEFAULT ''::text NOT NULL,
+    payload_json jsonb DEFAULT '[]'::jsonb NOT NULL,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT jira_metadata_cache_metadata_type_check CHECK ((metadata_type = ANY (ARRAY['PROJECTS'::text, 'ISSUE_TYPES'::text, 'COMPONENTS'::text, 'PRIORITIES'::text, 'ISSUES'::text, 'TRANSITIONS'::text, 'ISSUE_FIELDS'::text])))
+);
+
+
+--
+-- Name: product_group_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.product_group_grants (
+    product_id uuid NOT NULL,
+    group_id uuid NOT NULL,
+    role text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT product_group_grants_role_check CHECK ((role = ANY (ARRAY['EDITOR'::text, 'VIEWER'::text])))
+);
+
+
+--
+-- Name: products; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.products (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    description text,
+    archived_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    project_id uuid NOT NULL,
+    malware_default_priority text,
+    owner_group_id uuid,
+    created_by uuid,
+    CONSTRAINT chk_products_malware_default_priority CHECK (((malware_default_priority IS NULL) OR (malware_default_priority = ANY (ARRAY['P1'::text, 'P2'::text, 'P3'::text, 'P4'::text]))))
+);
+
+
+--
+-- Name: TABLE products; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.products IS 'Root entity for organizing projects (e.g. "Banking Ecosystem").';
+
+
+--
+-- Name: project_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.project_memberships (
+    project_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    project_role text DEFAULT 'READER'::text NOT NULL,
+    CONSTRAINT chk_project_memberships_project_role CHECK ((project_role = ANY (ARRAY['ADMIN'::text, 'WRITER'::text, 'READER'::text])))
+);
+
+
+--
+-- Name: projects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.projects (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    description text,
+    archived_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+--
+-- Name: refresh_tokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.refresh_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    replaced_by_id uuid,
+    created_at timestamp with time zone DEFAULT now(),
+    last_used_at timestamp with time zone,
+    user_agent text,
+    ip_address text
+);
+
+
+--
+-- Name: sbom_objects; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sbom_objects (
+    sha256 character(64) NOT NULL,
+    storage_path text NOT NULL,
+    size_bytes bigint NOT NULL,
+    format text NOT NULL,
+    content_type text DEFAULT ''::text NOT NULL,
+    is_gzip boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE sbom_objects; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.sbom_objects IS 'Physical file storage metadata. Content is deduplicated by SHA256.';
+
+
+--
+-- Name: scan_malware_source; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scan_malware_source (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    source_type text NOT NULL,
+    base_url text NOT NULL,
+    config_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    is_active boolean DEFAULT true,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT scan_malware_source_source_type_check CHECK ((source_type = ANY (ARRAY['OSV_API'::text, 'OSV_MIRROR'::text, 'GITHUB_ADVISORIES'::text])))
+);
+
+
+--
+-- Name: TABLE scan_malware_source; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.scan_malware_source IS 'Configuration for malware data sources (OSV API/mirror, GitHub advisories, etc.).';
+
+
+--
+-- Name: scopes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.scopes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    product_id uuid NOT NULL,
+    name text NOT NULL,
+    description text,
+    archived_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    malware_default_priority text,
+    CONSTRAINT chk_scopes_malware_default_priority CHECK (((malware_default_priority IS NULL) OR (malware_default_priority = ANY (ARRAY['P1'::text, 'P2'::text, 'P3'::text, 'P4'::text]))))
+);
+
+
+--
+-- Name: TABLE scopes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.scopes IS 'Sub-grouping within Product (e.g. "Backend Team" or "Payments Module").';
+
+
+--
+-- Name: source_malware_input_component_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_malware_input_component_results (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    component_purl text NOT NULL,
+    component_hash text,
+    analysis_result_id uuid,
+    scan_id uuid NOT NULL,
+    source_id uuid NOT NULL,
+    result_filename text,
+    evidence text,
+    details_json jsonb NOT NULL,
+    published_at timestamp with time zone,
+    modified_at timestamp with time zone,
+    detect_version text,
+    fixed_version text,
+    is_malware boolean NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE source_malware_input_component_results; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.source_malware_input_component_results IS 'Raw malware/heuristics findings per component PURL (hash may be unavailable).';
+
+
+--
+-- Name: source_malware_input_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_malware_input_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    component_purl text NOT NULL,
+    scanner_id uuid NOT NULL,
+    status text DEFAULT 'PENDING'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT source_malware_input_queue_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text, 'COMPLETED'::text, 'FAILED'::text])))
+);
+
+
+--
+-- Name: source_malware_input_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_malware_input_results (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    component_purl text NOT NULL,
+    component_hash text,
+    verdict text NOT NULL,
+    findings_count integer DEFAULT 0,
+    summary text,
+    scanned_at timestamp with time zone DEFAULT now(),
+    valid_until timestamp with time zone,
+    CONSTRAINT source_malware_input_results_verdict_check CHECK ((verdict = ANY (ARRAY['MALWARE'::text, 'CLEAN'::text, 'UNKNOWN'::text])))
+);
+
+
+--
+-- Name: TABLE source_malware_input_results; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.source_malware_input_results IS 'Persistent storage for analysis results (Malware/Heuristics). Decoupled from specific SBOMs via PURL.';
+
+
+--
+-- Name: source_scanners; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_scanners (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    source_id uuid NOT NULL,
+    name text NOT NULL,
+    scanner_type text NOT NULL,
+    version text,
+    results_path text,
+    config_json jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
+
+
+--
+-- Name: TABLE source_scanners; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.source_scanners IS 'Registered scanners with type/name/version tied to a malware source.';
+
+
+--
+-- Name: test_revision_change_summary; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_revision_change_summary (
+    to_revision_id uuid NOT NULL,
+    project_id uuid NOT NULL,
+    test_id uuid NOT NULL,
+    from_revision_id uuid,
+    added_count integer DEFAULT 0 NOT NULL,
+    removed_count integer DEFAULT 0 NOT NULL,
+    unchanged_count integer DEFAULT 0 NOT NULL,
+    reappeared_count integer DEFAULT 0 NOT NULL,
+    status text NOT NULL,
+    computed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_revision_change_summary_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text, 'COMPLETED'::text, 'FAILED'::text])))
+);
+
+
+--
+-- Name: test_revision_finding_diff_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_revision_finding_diff_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    test_id uuid NOT NULL,
+    from_revision_id uuid,
+    to_revision_id uuid NOT NULL,
+    status text NOT NULL,
+    reason text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    locked_at timestamp with time zone,
+    locked_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT test_revision_finding_diff_queue_reason_check CHECK ((reason = ANY (ARRAY['INGEST'::text, 'BACKFILL'::text, 'MANUAL'::text]))),
+    CONSTRAINT test_revision_finding_diff_queue_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text, 'COMPLETED'::text, 'FAILED'::text])))
+);
+
+
+--
+-- Name: test_revision_finding_diffs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_revision_finding_diffs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    test_id uuid NOT NULL,
+    from_revision_id uuid,
+    to_revision_id uuid NOT NULL,
+    finding_type text NOT NULL,
+    diff_type text NOT NULL,
+    component_purl text NOT NULL,
+    malware_purl text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_revision_finding_diffs_diff_type_check CHECK ((diff_type = ANY (ARRAY['ADDED'::text, 'REMOVED'::text, 'UNCHANGED'::text, 'REAPPEARED'::text]))),
+    CONSTRAINT test_revision_finding_diffs_finding_type_check CHECK ((finding_type = 'MALWARE'::text))
+);
+
+
+--
+-- Name: test_revision_malware_summary; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_revision_malware_summary (
+    revision_id uuid NOT NULL,
+    malware_component_count integer DEFAULT 0 NOT NULL,
+    computed_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT test_revision_malware_summary_malware_component_count_check CHECK ((malware_component_count >= 0))
+);
+
+
+--
+-- Name: TABLE test_revision_malware_summary; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.test_revision_malware_summary IS 'Materialized malware summary per TestRevision. Source of truth remains mappings/results; this is a cached read model.';
+
+
+--
+-- Name: test_revision_malware_summary_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_revision_malware_summary_queue (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    revision_id uuid NOT NULL,
+    status text DEFAULT 'PENDING'::text NOT NULL,
+    reason text DEFAULT 'BACKFILL'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    last_error text,
+    locked_at timestamp with time zone,
+    locked_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT test_revision_malware_summary_queue_reason_check CHECK ((reason = ANY (ARRAY['BACKFILL'::text, 'INGEST'::text, 'COMPONENT_ANALYSIS_UPDATE'::text, 'MANUAL'::text]))),
+    CONSTRAINT test_revision_malware_summary_queue_status_check CHECK ((status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text, 'COMPLETED'::text, 'FAILED'::text])))
+);
+
+
+--
+-- Name: TABLE test_revision_malware_summary_queue; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.test_revision_malware_summary_queue IS 'Queue of recomputation jobs for test_revision_malware_summary.';
+
+
+--
+-- Name: test_revisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.test_revisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    test_id uuid NOT NULL,
+    sbom_sha256 character(64) NOT NULL,
+    sbom_producer text DEFAULT 'other'::text NOT NULL,
+    sbom_metadata_json jsonb,
+    is_active boolean DEFAULT true,
+    components_count integer DEFAULT 0,
+    tags jsonb DEFAULT '[]'::jsonb NOT NULL,
+    metadata_json jsonb,
+    last_modified_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE test_revisions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.test_revisions IS 'Immutable snapshot of an uploaded SBOM file linked to a Test.';
+
+
+--
+-- Name: tests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.tests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    scope_id uuid NOT NULL,
+    name text NOT NULL,
+    is_public boolean DEFAULT false NOT NULL,
+    public_token text,
+    archived_at timestamp with time zone,
+    sbom_standard text NOT NULL,
+    sbom_spec_version text DEFAULT 'unknown'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    malware_default_priority text,
+    CONSTRAINT chk_tests_malware_default_priority CHECK (((malware_default_priority IS NULL) OR (malware_default_priority = ANY (ARRAY['P1'::text, 'P2'::text, 'P3'::text, 'P4'::text]))))
+);
+
+
+--
+-- Name: TABLE tests; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.tests IS 'Logical representation of an Application/Service. Holds configuration and permissions, effectively a container for SBOM history.';
+
+
+--
+-- Name: user_group_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_group_members (
+    group_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    role text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT user_group_members_role_check CHECK ((role = ANY (ARRAY['OWNER'::text, 'EDITOR'::text, 'VIEWER'::text])))
+);
+
+
+--
+-- Name: user_groups; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_groups (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    name text NOT NULL,
+    description text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid
+);
+
+
+--
+-- Name: user_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_settings (
+    user_id uuid NOT NULL,
+    selected_project_id uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.users (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    email text NOT NULL,
+    password_hash text NOT NULL,
+    role text DEFAULT 'NONE'::text,
+    account_type text DEFAULT 'USER'::text,
+    full_name text,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    nickname text DEFAULT 'user'::text NOT NULL,
+    CONSTRAINT chk_users_nickname CHECK (((char_length(btrim(nickname)) >= 1) AND (char_length(btrim(nickname)) <= 64))),
+    CONSTRAINT chk_users_role CHECK ((role = ANY (ARRAY['ADMIN'::text, 'WRITER'::text, 'READER'::text, 'NONE'::text]))),
+    CONSTRAINT users_account_type_check CHECK ((account_type = ANY (ARRAY['USER'::text, 'SERVICE_ACCOUNT'::text])))
+);
+
+
+--
+-- Name: alert_connector_settings alert_connector_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_connector_settings
+    ADD CONSTRAINT alert_connector_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_connector_settings alert_connector_settings_project_id_connector_type_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_connector_settings
+    ADD CONSTRAINT alert_connector_settings_project_id_connector_type_key UNIQUE (project_id, connector_type);
+
+
+--
+-- Name: alert_dedup_rules alert_dedup_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dedup_rules
+    ADD CONSTRAINT alert_dedup_rules_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_detection_modes alert_detection_modes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_detection_modes
+    ADD CONSTRAINT alert_detection_modes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_dispatch_queue alert_dispatch_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dispatch_queue
+    ADD CONSTRAINT alert_dispatch_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_groups alert_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_groups
+    ADD CONSTRAINT alert_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_groups alert_groups_project_id_group_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_groups
+    ADD CONSTRAINT alert_groups_project_id_group_key_key UNIQUE (project_id, group_key);
+
+
+--
+-- Name: alert_occurrences alert_occurrences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_occurrences
+    ADD CONSTRAINT alert_occurrences_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_routes alert_routes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_routes
+    ADD CONSTRAINT alert_routes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_routes alert_routes_project_id_connector_type_target_type_target_i_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_routes
+    ADD CONSTRAINT alert_routes_project_id_connector_type_target_type_target_i_key UNIQUE (project_id, connector_type, target_type, target_id);
+
+
+--
+-- Name: api_tokens api_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_tokens
+    ADD CONSTRAINT api_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_analysis_malware_component_state component_analysis_malware_component_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_analysis_malware_component_state
+    ADD CONSTRAINT component_analysis_malware_component_state_pkey PRIMARY KEY (component_purl);
+
+
+--
+-- Name: component_analysis_malware_findings component_analysis_malware_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_analysis_malware_findings
+    ADD CONSTRAINT component_analysis_malware_findings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_analysis_malware_queue component_analysis_malware_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_analysis_malware_queue
+    ADD CONSTRAINT component_analysis_malware_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_analysis_malware_schedule component_analysis_malware_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_analysis_malware_schedule
+    ADD CONSTRAINT component_analysis_malware_schedule_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_malware_findings_triage component_malware_findings_triage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_malware_findings_triage
+    ADD CONSTRAINT component_malware_findings_triage_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: component_overrides component_overrides_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_overrides
+    ADD CONSTRAINT component_overrides_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: components components_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.components
+    ADD CONSTRAINT components_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: connector_configs connector_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_configs
+    ADD CONSTRAINT connector_configs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ingest_queue ingest_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ingest_queue
+    ADD CONSTRAINT ingest_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: jira_delivery_attempts jira_delivery_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_delivery_attempts
+    ADD CONSTRAINT jira_delivery_attempts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: jira_entity_settings jira_entity_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_entity_settings
+    ADD CONSTRAINT jira_entity_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: jira_entity_settings jira_entity_settings_project_id_config_level_config_target__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_entity_settings
+    ADD CONSTRAINT jira_entity_settings_project_id_config_level_config_target__key UNIQUE (project_id, config_level, config_target_id);
+
+
+--
+-- Name: jira_issue_mappings jira_issue_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_issue_mappings
+    ADD CONSTRAINT jira_issue_mappings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: jira_metadata_cache jira_metadata_cache_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_metadata_cache
+    ADD CONSTRAINT jira_metadata_cache_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: jira_metadata_cache jira_metadata_cache_project_id_base_url_hash_metadata_type__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_metadata_cache
+    ADD CONSTRAINT jira_metadata_cache_project_id_base_url_hash_metadata_type__key UNIQUE (project_id, base_url_hash, metadata_type, metadata_scope_key);
+
+
+--
+-- Name: product_group_grants product_group_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_group_grants
+    ADD CONSTRAINT product_group_grants_pkey PRIMARY KEY (product_id, group_id);
+
+
+--
+-- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT products_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: project_memberships project_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_memberships
+    ADD CONSTRAINT project_memberships_pkey PRIMARY KEY (project_id, user_id);
+
+
+--
+-- Name: projects projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT projects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: refresh_tokens refresh_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: refresh_tokens refresh_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: sbom_objects sbom_objects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sbom_objects
+    ADD CONSTRAINT sbom_objects_pkey PRIMARY KEY (sha256);
+
+
+--
+-- Name: scan_malware_source scan_malware_source_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scan_malware_source
+    ADD CONSTRAINT scan_malware_source_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: scopes scopes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scopes
+    ADD CONSTRAINT scopes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_malware_input_component_results source_malware_input_component_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_component_results
+    ADD CONSTRAINT source_malware_input_component_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_malware_input_queue source_malware_input_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_queue
+    ADD CONSTRAINT source_malware_input_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_malware_input_results source_malware_input_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_results
+    ADD CONSTRAINT source_malware_input_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_scanners source_scanners_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_scanners
+    ADD CONSTRAINT source_scanners_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_revision_change_summary test_revision_change_summary_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_change_summary
+    ADD CONSTRAINT test_revision_change_summary_pkey PRIMARY KEY (to_revision_id);
+
+
+--
+-- Name: test_revision_finding_diff_queue test_revision_finding_diff_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diff_queue
+    ADD CONSTRAINT test_revision_finding_diff_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_revision_finding_diff_queue test_revision_finding_diff_queue_to_revision_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diff_queue
+    ADD CONSTRAINT test_revision_finding_diff_queue_to_revision_id_key UNIQUE (to_revision_id);
+
+
+--
+-- Name: test_revision_finding_diffs test_revision_finding_diffs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diffs
+    ADD CONSTRAINT test_revision_finding_diffs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_revision_malware_summary test_revision_malware_summary_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_malware_summary
+    ADD CONSTRAINT test_revision_malware_summary_pkey PRIMARY KEY (revision_id);
+
+
+--
+-- Name: test_revision_malware_summary_queue test_revision_malware_summary_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_malware_summary_queue
+    ADD CONSTRAINT test_revision_malware_summary_queue_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: test_revisions test_revisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revisions
+    ADD CONSTRAINT test_revisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tests tests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tests
+    ADD CONSTRAINT tests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alert_detection_modes uq_alert_detection_modes_project_mode; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_detection_modes
+    ADD CONSTRAINT uq_alert_detection_modes_project_mode UNIQUE (project_id, mode);
+
+
+--
+-- Name: source_malware_input_queue uq_analysis_queue_target; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_queue
+    ADD CONSTRAINT uq_analysis_queue_target UNIQUE (component_purl, scanner_id);
+
+
+--
+-- Name: component_analysis_malware_findings uq_component_analysis_malware_findings; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_analysis_malware_findings
+    ADD CONSTRAINT uq_component_analysis_malware_findings UNIQUE (component_purl, malware_purl);
+
+
+--
+-- Name: component_malware_findings_triage uq_component_malware_findings_triage; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_malware_findings_triage
+    ADD CONSTRAINT uq_component_malware_findings_triage UNIQUE (test_id, component_purl, malware_purl);
+
+
+--
+-- Name: component_overrides uq_override_target; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_overrides
+    ADD CONSTRAINT uq_override_target UNIQUE (test_id, purl_pattern);
+
+
+--
+-- Name: source_malware_input_results uq_result_target; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_results
+    ADD CONSTRAINT uq_result_target UNIQUE (component_purl);
+
+
+--
+-- Name: source_malware_input_component_results uq_scan_component_result; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_component_results
+    ADD CONSTRAINT uq_scan_component_result UNIQUE (component_purl, source_id, result_filename);
+
+
+--
+-- Name: test_revision_malware_summary_queue uq_test_revision_malware_summary_queue_revision; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_malware_summary_queue
+    ADD CONSTRAINT uq_test_revision_malware_summary_queue_revision UNIQUE (revision_id);
+
+
+--
+-- Name: user_group_members user_group_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_group_members
+    ADD CONSTRAINT user_group_members_pkey PRIMARY KEY (group_id, user_id);
+
+
+--
+-- Name: user_groups user_groups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_groups
+    ADD CONSTRAINT user_groups_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_settings user_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings
+    ADD CONSTRAINT user_settings_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_email_key UNIQUE (email);
+
+
+--
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_alert_connector_settings_jira_dedup_rule; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_connector_settings_jira_dedup_rule ON public.alert_connector_settings USING btree (project_id, connector_type, jira_dedup_rule_id) WHERE (connector_type = 'JIRA'::text);
+
+
+--
+-- Name: idx_alert_dedup_rules_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_dedup_rules_lookup ON public.alert_dedup_rules USING btree (project_id, alert_type, dedup_scope, enabled);
+
+
+--
+-- Name: idx_alert_detection_modes_project_mode; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_detection_modes_project_mode ON public.alert_detection_modes USING btree (project_id, mode);
+
+
+--
+-- Name: idx_alert_dispatch_queue_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_dispatch_queue_claim ON public.alert_dispatch_queue USING btree (message_type, state, next_attempt_at, created_at);
+
+
+--
+-- Name: idx_alert_dispatch_queue_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_dispatch_queue_group ON public.alert_dispatch_queue USING btree (project_id, group_id, message_type, created_at DESC) WHERE (group_id IS NOT NULL);
+
+
+--
+-- Name: idx_alert_dispatch_queue_state_done; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_dispatch_queue_state_done ON public.alert_dispatch_queue USING btree (state, done_at);
+
+
+--
+-- Name: idx_alert_groups_project_last_seen; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_groups_project_last_seen ON public.alert_groups USING btree (project_id, last_seen_at DESC);
+
+
+--
+-- Name: idx_alert_groups_project_status_severity_last_seen; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_groups_project_status_severity_last_seen ON public.alert_groups USING btree (project_id, status, severity, last_seen_at DESC);
+
+
+--
+-- Name: idx_alert_occurrences_project_group_occurred_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_occurrences_project_group_occurred_at ON public.alert_occurrences USING btree (project_id, group_id, occurred_at DESC);
+
+
+--
+-- Name: idx_alert_occurrences_project_occurred_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_occurrences_project_occurred_at ON public.alert_occurrences USING btree (project_id, occurred_at DESC);
+
+
+--
+-- Name: idx_alert_routes_project_connector; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_alert_routes_project_connector ON public.alert_routes USING btree (project_id, connector_type);
+
+
+--
+-- Name: idx_audit_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_created ON public.audit_logs USING brin (created_at);
+
+
+--
+-- Name: idx_audit_events_ack_event_key_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_events_ack_event_key_created ON public.audit_logs USING btree (((details ->> 'event_key'::text)), created_at DESC) WHERE ((action = 'EVENT_ACK'::text) AND (details ? 'event_key'::text) AND (COALESCE((details ->> 'event_key'::text), ''::text) <> ''::text));
+
+
+--
+-- Name: idx_audit_events_event_key_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_events_event_key_created ON public.audit_logs USING btree (((details ->> 'event_key'::text)), created_at DESC) WHERE ((action <> 'EVENT_ACK'::text) AND (details ? 'event_key'::text) AND (COALESCE((details ->> 'event_key'::text), ''::text) <> ''::text));
+
+
+--
+-- Name: idx_audit_events_severity_category_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_audit_events_severity_category_created ON public.audit_logs USING btree (((details ->> 'severity'::text)), ((details ->> 'category'::text)), created_at DESC) WHERE ((action <> 'EVENT_ACK'::text) AND (details ? 'event_key'::text) AND (COALESCE((details ->> 'event_key'::text), ''::text) <> ''::text));
+
+
+--
+-- Name: idx_component_analysis_malware_component_state_valid_until; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_analysis_malware_component_state_valid_until ON public.component_analysis_malware_component_state USING btree (valid_until);
+
+
+--
+-- Name: idx_component_analysis_malware_findings_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_analysis_malware_findings_component ON public.component_analysis_malware_findings USING btree (component_purl);
+
+
+--
+-- Name: idx_component_analysis_malware_findings_malware; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_analysis_malware_findings_malware ON public.component_analysis_malware_findings USING btree (malware_purl);
+
+
+--
+-- Name: idx_component_analysis_malware_queue_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_analysis_malware_queue_component ON public.component_analysis_malware_queue USING btree (component_purl, created_at DESC);
+
+
+--
+-- Name: idx_component_analysis_malware_queue_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_analysis_malware_queue_status ON public.component_analysis_malware_queue USING btree (status, created_at);
+
+
+--
+-- Name: idx_component_malware_findings_triage_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_malware_findings_triage_lookup ON public.component_malware_findings_triage USING btree (test_id, component_purl, malware_purl);
+
+
+--
+-- Name: idx_component_malware_findings_triage_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_malware_findings_triage_project ON public.component_malware_findings_triage USING btree (project_id, updated_at DESC);
+
+
+--
+-- Name: idx_component_malware_findings_triage_test; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_component_malware_findings_triage_test ON public.component_malware_findings_triage USING btree (test_id, updated_at DESC);
+
+
+--
+-- Name: idx_components_licenses; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_components_licenses ON public.components USING gin (licenses);
+
+
+--
+-- Name: idx_components_purl; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_components_purl ON public.components USING btree (purl);
+
+
+--
+-- Name: idx_components_purl_trgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_components_purl_trgm ON public.components USING gin (purl public.gin_trgm_ops);
+
+
+--
+-- Name: idx_components_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_components_revision ON public.components USING btree (revision_id);
+
+
+--
+-- Name: idx_connector_configs_scope; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_connector_configs_scope ON public.connector_configs USING btree (scope_type, scope_id);
+
+
+--
+-- Name: idx_ingest_queue_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ingest_queue_status ON public.ingest_queue USING btree (status, created_at);
+
+
+--
+-- Name: idx_jira_delivery_attempts_mapping; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_delivery_attempts_mapping ON public.jira_delivery_attempts USING btree (jira_issue_mapping_id, created_at DESC) WHERE (jira_issue_mapping_id IS NOT NULL);
+
+
+--
+-- Name: idx_jira_delivery_attempts_project_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_delivery_attempts_project_created ON public.jira_delivery_attempts USING btree (project_id, created_at DESC);
+
+
+--
+-- Name: idx_jira_entity_settings_project_level; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_entity_settings_project_level ON public.jira_entity_settings USING btree (project_id, config_level, config_target_id);
+
+
+--
+-- Name: idx_jira_issue_mappings_component_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_issue_mappings_component_lookup ON public.jira_issue_mappings USING btree (project_id, test_id, component_purl, updated_at DESC) WHERE ((test_id IS NOT NULL) AND (component_purl IS NOT NULL));
+
+
+--
+-- Name: idx_jira_issue_mappings_group_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_issue_mappings_group_lookup ON public.jira_issue_mappings USING btree (project_id, alert_group_id, status, updated_at DESC);
+
+
+--
+-- Name: idx_jira_issue_mappings_owner_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_issue_mappings_owner_lookup ON public.jira_issue_mappings USING btree (project_id, config_level, config_target_id, status, updated_at DESC);
+
+
+--
+-- Name: idx_jira_metadata_cache_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jira_metadata_cache_lookup ON public.jira_metadata_cache USING btree (project_id, base_url_hash, metadata_type, metadata_scope_key);
+
+
+--
+-- Name: idx_product_group_grants_group_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_product_group_grants_group_product ON public.product_group_grants USING btree (group_id, product_id);
+
+
+--
+-- Name: idx_products_created_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_products_created_by ON public.products USING btree (created_by);
+
+
+--
+-- Name: idx_products_owner_group_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_products_owner_group_id ON public.products USING btree (owner_group_id);
+
+
+--
+-- Name: idx_products_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_products_project_id ON public.products USING btree (project_id);
+
+
+--
+-- Name: idx_project_memberships_project_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_project_memberships_project_user ON public.project_memberships USING btree (project_id, user_id);
+
+
+--
+-- Name: idx_project_memberships_user_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_project_memberships_user_project ON public.project_memberships USING btree (user_id, project_id);
+
+
+--
+-- Name: idx_project_memberships_user_project_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_project_memberships_user_project_role ON public.project_memberships USING btree (user_id, project_id, project_role);
+
+
+--
+-- Name: idx_projects_created_by; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_projects_created_by ON public.projects USING btree (created_by);
+
+
+--
+-- Name: idx_queue_poll; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_queue_poll ON public.source_malware_input_queue USING btree (status, created_at);
+
+
+--
+-- Name: idx_refresh_tokens_expires; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_refresh_tokens_expires ON public.refresh_tokens USING btree (expires_at);
+
+
+--
+-- Name: idx_refresh_tokens_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_refresh_tokens_user ON public.refresh_tokens USING btree (user_id);
+
+
+--
+-- Name: idx_results_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_results_lookup ON public.source_malware_input_results USING btree (component_purl, verdict);
+
+
+--
+-- Name: idx_revisions_tags_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revisions_tags_gin ON public.test_revisions USING gin (tags);
+
+
+--
+-- Name: idx_revisions_test_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_revisions_test_created ON public.test_revisions USING btree (test_id, created_at DESC);
+
+
+--
+-- Name: idx_scan_component_results_purl_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scan_component_results_purl_created ON public.source_malware_input_component_results USING btree (component_purl, created_at DESC);
+
+
+--
+-- Name: idx_scan_component_results_source_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_scan_component_results_source_created ON public.source_malware_input_component_results USING btree (source_id, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_change_summary_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_change_summary_project ON public.test_revision_change_summary USING btree (project_id, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_change_summary_test; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_change_summary_test ON public.test_revision_change_summary USING btree (test_id, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_finding_diff_queue_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_finding_diff_queue_status ON public.test_revision_finding_diff_queue USING btree (status, updated_at);
+
+
+--
+-- Name: idx_test_revision_finding_diff_queue_test; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_finding_diff_queue_test ON public.test_revision_finding_diff_queue USING btree (test_id, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_finding_diffs_project_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_finding_diffs_project_revision ON public.test_revision_finding_diffs USING btree (project_id, to_revision_id, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_finding_diffs_test_revision_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_finding_diffs_test_revision_type ON public.test_revision_finding_diffs USING btree (test_id, to_revision_id, diff_type, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_malware_summary_queue_revision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_malware_summary_queue_revision ON public.test_revision_malware_summary_queue USING btree (revision_id, created_at DESC);
+
+
+--
+-- Name: idx_test_revision_malware_summary_queue_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_test_revision_malware_summary_queue_status ON public.test_revision_malware_summary_queue USING btree (status, created_at);
+
+
+--
+-- Name: idx_user_group_members_user_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_group_members_user_group ON public.user_group_members USING btree (user_id, group_id);
+
+
+--
+-- Name: idx_user_groups_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_groups_project_id ON public.user_groups USING btree (project_id);
+
+
+--
+-- Name: idx_user_settings_selected_project; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_settings_selected_project ON public.user_settings USING btree (selected_project_id);
+
+
+--
+-- Name: uq_component_analysis_malware_queue_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_component_analysis_malware_queue_active ON public.component_analysis_malware_queue USING btree (component_purl) WHERE (status = ANY (ARRAY['PENDING'::text, 'PROCESSING'::text]));
+
+
+--
+-- Name: uq_connector_configs_global; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_connector_configs_global ON public.connector_configs USING btree (connector_type) WHERE ((scope_type = 'GLOBAL'::text) AND (scope_id IS NULL));
+
+
+--
+-- Name: uq_connector_configs_scoped; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_connector_configs_scoped ON public.connector_configs USING btree (connector_type, scope_type, scope_id) WHERE ((scope_type <> 'GLOBAL'::text) AND (scope_id IS NOT NULL));
+
+
+--
+-- Name: uq_products_project_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_products_project_name ON public.products USING btree (project_id, lower(name));
+
+
+--
+-- Name: uq_projects_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_projects_name ON public.projects USING btree (lower(name));
+
+
+--
+-- Name: uq_revisions_active_per_test; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_revisions_active_per_test ON public.test_revisions USING btree (test_id) WHERE (is_active = true);
+
+
+--
+-- Name: uq_scopes_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_scopes_name ON public.scopes USING btree (product_id, lower(name));
+
+
+--
+-- Name: uq_test_revision_finding_diffs_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_test_revision_finding_diffs_identity ON public.test_revision_finding_diffs USING btree (to_revision_id, finding_type, component_purl, malware_purl);
+
+
+--
+-- Name: uq_tests_name_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_tests_name_type ON public.tests USING btree (scope_id, lower(name), sbom_standard, sbom_spec_version);
+
+
+--
+-- Name: uq_tests_public_token; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_tests_public_token ON public.tests USING btree (public_token) WHERE (public_token IS NOT NULL);
+
+
+--
+-- Name: uq_user_groups_project_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_user_groups_project_name ON public.user_groups USING btree (project_id, lower(name));
+
+
+--
+-- Name: ux_alert_dedup_rules_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_alert_dedup_rules_identity ON public.alert_dedup_rules USING btree (project_id, alert_type, dedup_scope, COALESCE(product_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(scope_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(test_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+
+--
+-- Name: ux_jira_issue_mappings_owner_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_jira_issue_mappings_owner_identity ON public.jira_issue_mappings USING btree (project_id, config_level, config_target_id, alert_group_id, COALESCE(dedup_rule_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE ((test_id IS NULL) AND ((component_purl IS NULL) OR (btrim(component_purl) = ''::text)));
+
+
+--
+-- Name: ux_jira_issue_mappings_open_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_jira_issue_mappings_open_component ON public.jira_issue_mappings USING btree (project_id, test_id, component_purl) WHERE ((status = 'OPEN'::text) AND (test_id IS NOT NULL) AND (component_purl IS NOT NULL));
+
+
+--
+-- Name: product_group_grants trg_product_group_grants_validate; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_product_group_grants_validate BEFORE INSERT OR UPDATE OF product_id, group_id ON public.product_group_grants FOR EACH ROW EXECUTE FUNCTION public.ctwall_product_group_grants_validate();
+
+
+--
+-- Name: products trg_products_validate_owner_group; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_products_validate_owner_group BEFORE INSERT OR UPDATE OF owner_group_id, project_id, created_by ON public.products FOR EACH ROW EXECUTE FUNCTION public.ctwall_products_validate_owner_group();
+
+
+--
+-- Name: alert_connector_settings alert_connector_settings_jira_dedup_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_connector_settings
+    ADD CONSTRAINT alert_connector_settings_jira_dedup_rule_id_fkey FOREIGN KEY (jira_dedup_rule_id) REFERENCES public.alert_dedup_rules(id) ON DELETE SET NULL;
+
+
+--
+-- Name: alert_connector_settings alert_connector_settings_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_connector_settings
+    ADD CONSTRAINT alert_connector_settings_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_dedup_rules alert_dedup_rules_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dedup_rules
+    ADD CONSTRAINT alert_dedup_rules_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_dedup_rules alert_dedup_rules_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dedup_rules
+    ADD CONSTRAINT alert_dedup_rules_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_dedup_rules alert_dedup_rules_scope_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dedup_rules
+    ADD CONSTRAINT alert_dedup_rules_scope_id_fkey FOREIGN KEY (scope_id) REFERENCES public.scopes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_dedup_rules alert_dedup_rules_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dedup_rules
+    ADD CONSTRAINT alert_dedup_rules_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_detection_modes alert_detection_modes_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_detection_modes
+    ADD CONSTRAINT alert_detection_modes_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_dispatch_queue alert_dispatch_queue_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dispatch_queue
+    ADD CONSTRAINT alert_dispatch_queue_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.alert_groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_dispatch_queue alert_dispatch_queue_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_dispatch_queue
+    ADD CONSTRAINT alert_dispatch_queue_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_groups alert_groups_acknowledged_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_groups
+    ADD CONSTRAINT alert_groups_acknowledged_by_fkey FOREIGN KEY (acknowledged_by) REFERENCES public.users(id);
+
+
+--
+-- Name: alert_groups alert_groups_closed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_groups
+    ADD CONSTRAINT alert_groups_closed_by_fkey FOREIGN KEY (closed_by) REFERENCES public.users(id);
+
+
+--
+-- Name: alert_groups alert_groups_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_groups
+    ADD CONSTRAINT alert_groups_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_occurrences alert_occurrences_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_occurrences
+    ADD CONSTRAINT alert_occurrences_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.alert_groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_occurrences alert_occurrences_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_occurrences
+    ADD CONSTRAINT alert_occurrences_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE SET NULL;
+
+
+--
+-- Name: alert_occurrences alert_occurrences_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_occurrences
+    ADD CONSTRAINT alert_occurrences_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: alert_occurrences alert_occurrences_scope_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_occurrences
+    ADD CONSTRAINT alert_occurrences_scope_id_fkey FOREIGN KEY (scope_id) REFERENCES public.scopes(id) ON DELETE SET NULL;
+
+
+--
+-- Name: alert_occurrences alert_occurrences_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_occurrences
+    ADD CONSTRAINT alert_occurrences_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE SET NULL;
+
+
+--
+-- Name: alert_routes alert_routes_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alert_routes
+    ADD CONSTRAINT alert_routes_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_tokens api_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_tokens
+    ADD CONSTRAINT api_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audit_logs audit_logs_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_logs
+    ADD CONSTRAINT audit_logs_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: component_analysis_malware_findings component_analysis_malware_fi_source_malware_input_result__fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_analysis_malware_findings
+    ADD CONSTRAINT component_analysis_malware_fi_source_malware_input_result__fkey FOREIGN KEY (source_malware_input_result_id) REFERENCES public.source_malware_input_results(id) ON DELETE CASCADE;
+
+
+--
+-- Name: component_malware_findings_triage component_malware_findings_triage_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_malware_findings_triage
+    ADD CONSTRAINT component_malware_findings_triage_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: component_malware_findings_triage component_malware_findings_triage_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_malware_findings_triage
+    ADD CONSTRAINT component_malware_findings_triage_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: component_malware_findings_triage component_malware_findings_triage_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_malware_findings_triage
+    ADD CONSTRAINT component_malware_findings_triage_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: component_overrides component_overrides_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.component_overrides
+    ADD CONSTRAINT component_overrides_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: components components_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.components
+    ADD CONSTRAINT components_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.test_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: products fk_products_project_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT fk_products_project_id FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jira_delivery_attempts jira_delivery_attempts_alert_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_delivery_attempts
+    ADD CONSTRAINT jira_delivery_attempts_alert_group_id_fkey FOREIGN KEY (alert_group_id) REFERENCES public.alert_groups(id) ON DELETE SET NULL;
+
+
+--
+-- Name: jira_delivery_attempts jira_delivery_attempts_dedup_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_delivery_attempts
+    ADD CONSTRAINT jira_delivery_attempts_dedup_rule_id_fkey FOREIGN KEY (dedup_rule_id) REFERENCES public.alert_dedup_rules(id) ON DELETE SET NULL;
+
+
+--
+-- Name: jira_delivery_attempts jira_delivery_attempts_jira_issue_mapping_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_delivery_attempts
+    ADD CONSTRAINT jira_delivery_attempts_jira_issue_mapping_id_fkey FOREIGN KEY (jira_issue_mapping_id) REFERENCES public.jira_issue_mappings(id) ON DELETE SET NULL;
+
+
+--
+-- Name: jira_delivery_attempts jira_delivery_attempts_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_delivery_attempts
+    ADD CONSTRAINT jira_delivery_attempts_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jira_delivery_attempts jira_delivery_attempts_queue_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_delivery_attempts
+    ADD CONSTRAINT jira_delivery_attempts_queue_job_id_fkey FOREIGN KEY (queue_job_id) REFERENCES public.alert_dispatch_queue(id) ON DELETE SET NULL;
+
+
+--
+-- Name: jira_entity_settings jira_entity_settings_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_entity_settings
+    ADD CONSTRAINT jira_entity_settings_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jira_issue_mappings jira_issue_mappings_alert_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_issue_mappings
+    ADD CONSTRAINT jira_issue_mappings_alert_group_id_fkey FOREIGN KEY (alert_group_id) REFERENCES public.alert_groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jira_issue_mappings jira_issue_mappings_dedup_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_issue_mappings
+    ADD CONSTRAINT jira_issue_mappings_dedup_rule_id_fkey FOREIGN KEY (dedup_rule_id) REFERENCES public.alert_dedup_rules(id) ON DELETE SET NULL;
+
+
+--
+-- Name: jira_issue_mappings jira_issue_mappings_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_issue_mappings
+    ADD CONSTRAINT jira_issue_mappings_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jira_issue_mappings jira_issue_mappings_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_issue_mappings
+    ADD CONSTRAINT jira_issue_mappings_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: jira_metadata_cache jira_metadata_cache_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.jira_metadata_cache
+    ADD CONSTRAINT jira_metadata_cache_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_group_grants product_group_grants_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_group_grants
+    ADD CONSTRAINT product_group_grants_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: product_group_grants product_group_grants_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_group_grants
+    ADD CONSTRAINT product_group_grants_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.user_groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: product_group_grants product_group_grants_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.product_group_grants
+    ADD CONSTRAINT product_group_grants_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: products products_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT products_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: products products_owner_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.products
+    ADD CONSTRAINT products_owner_group_id_fkey FOREIGN KEY (owner_group_id) REFERENCES public.user_groups(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: project_memberships project_memberships_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_memberships
+    ADD CONSTRAINT project_memberships_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: project_memberships project_memberships_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_memberships
+    ADD CONSTRAINT project_memberships_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: project_memberships project_memberships_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_memberships
+    ADD CONSTRAINT project_memberships_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: projects projects_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT projects_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: refresh_tokens refresh_tokens_replaced_by_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_replaced_by_id_fkey FOREIGN KEY (replaced_by_id) REFERENCES public.refresh_tokens(id) ON DELETE SET NULL;
+
+
+--
+-- Name: refresh_tokens refresh_tokens_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refresh_tokens
+    ADD CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scopes scopes_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scopes
+    ADD CONSTRAINT scopes_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_malware_input_component_results source_malware_input_component_results_analysis_result_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_component_results
+    ADD CONSTRAINT source_malware_input_component_results_analysis_result_id_fkey FOREIGN KEY (analysis_result_id) REFERENCES public.source_malware_input_results(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_malware_input_component_results source_malware_input_component_results_scan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_component_results
+    ADD CONSTRAINT source_malware_input_component_results_scan_id_fkey FOREIGN KEY (scan_id) REFERENCES public.source_malware_input_queue(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_malware_input_queue source_malware_input_queue_scanner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_malware_input_queue
+    ADD CONSTRAINT source_malware_input_queue_scanner_id_fkey FOREIGN KEY (scanner_id) REFERENCES public.source_scanners(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_scanners source_scanners_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_scanners
+    ADD CONSTRAINT source_scanners_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.scan_malware_source(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: test_revision_change_summary test_revision_change_summary_from_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_change_summary
+    ADD CONSTRAINT test_revision_change_summary_from_revision_id_fkey FOREIGN KEY (from_revision_id) REFERENCES public.test_revisions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: test_revision_change_summary test_revision_change_summary_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_change_summary
+    ADD CONSTRAINT test_revision_change_summary_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_change_summary test_revision_change_summary_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_change_summary
+    ADD CONSTRAINT test_revision_change_summary_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_change_summary test_revision_change_summary_to_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_change_summary
+    ADD CONSTRAINT test_revision_change_summary_to_revision_id_fkey FOREIGN KEY (to_revision_id) REFERENCES public.test_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_finding_diff_queue test_revision_finding_diff_queue_from_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diff_queue
+    ADD CONSTRAINT test_revision_finding_diff_queue_from_revision_id_fkey FOREIGN KEY (from_revision_id) REFERENCES public.test_revisions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: test_revision_finding_diff_queue test_revision_finding_diff_queue_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diff_queue
+    ADD CONSTRAINT test_revision_finding_diff_queue_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_finding_diff_queue test_revision_finding_diff_queue_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diff_queue
+    ADD CONSTRAINT test_revision_finding_diff_queue_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_finding_diff_queue test_revision_finding_diff_queue_to_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diff_queue
+    ADD CONSTRAINT test_revision_finding_diff_queue_to_revision_id_fkey FOREIGN KEY (to_revision_id) REFERENCES public.test_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_finding_diffs test_revision_finding_diffs_from_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diffs
+    ADD CONSTRAINT test_revision_finding_diffs_from_revision_id_fkey FOREIGN KEY (from_revision_id) REFERENCES public.test_revisions(id) ON DELETE SET NULL;
+
+
+--
+-- Name: test_revision_finding_diffs test_revision_finding_diffs_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diffs
+    ADD CONSTRAINT test_revision_finding_diffs_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_finding_diffs test_revision_finding_diffs_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diffs
+    ADD CONSTRAINT test_revision_finding_diffs_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_finding_diffs test_revision_finding_diffs_to_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_finding_diffs
+    ADD CONSTRAINT test_revision_finding_diffs_to_revision_id_fkey FOREIGN KEY (to_revision_id) REFERENCES public.test_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_malware_summary_queue test_revision_malware_summary_queue_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_malware_summary_queue
+    ADD CONSTRAINT test_revision_malware_summary_queue_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.test_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revision_malware_summary test_revision_malware_summary_revision_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revision_malware_summary
+    ADD CONSTRAINT test_revision_malware_summary_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.test_revisions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: test_revisions test_revisions_sbom_sha256_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revisions
+    ADD CONSTRAINT test_revisions_sbom_sha256_fkey FOREIGN KEY (sbom_sha256) REFERENCES public.sbom_objects(sha256);
+
+
+--
+-- Name: test_revisions test_revisions_test_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.test_revisions
+    ADD CONSTRAINT test_revisions_test_id_fkey FOREIGN KEY (test_id) REFERENCES public.tests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tests tests_scope_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.tests
+    ADD CONSTRAINT tests_scope_id_fkey FOREIGN KEY (scope_id) REFERENCES public.scopes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_group_members user_group_members_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_group_members
+    ADD CONSTRAINT user_group_members_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: user_group_members user_group_members_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_group_members
+    ADD CONSTRAINT user_group_members_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.user_groups(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_group_members user_group_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_group_members
+    ADD CONSTRAINT user_group_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_groups user_groups_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_groups
+    ADD CONSTRAINT user_groups_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: user_groups user_groups_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_groups
+    ADD CONSTRAINT user_groups_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: user_settings user_settings_selected_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings
+    ADD CONSTRAINT user_settings_selected_project_id_fkey FOREIGN KEY (selected_project_id) REFERENCES public.projects(id) ON DELETE SET NULL;
+
+
+--
+-- Name: user_settings user_settings_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings
+    ADD CONSTRAINT user_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+--
+
+
+
+-- Seed singleton schedule row expected by runtime APIs.
+INSERT INTO public.component_analysis_malware_schedule (id, enabled, interval_seconds, updated_at)
+VALUES (1, TRUE, 21600, NOW())
+ON CONFLICT (id) DO NOTHING;
