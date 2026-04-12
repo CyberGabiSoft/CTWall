@@ -1,0 +1,111 @@
+version: 2
+
+updates:
+  # CTWall backend (Go modules)
+  - package-ecosystem: "gomod"
+    directory: "backend/src"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "go"
+      - "ctwall"
+
+  # CTWall frontend (npm)
+  - package-ecosystem: "npm"
+    directory: "frontend/src"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "npm"
+      - "ctwall"
+
+  # Docker base images used by Dockerfiles
+  - package-ecosystem: "docker"
+    directory: "backend/docker"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+      - "ctwall"
+
+  - package-ecosystem: "docker"
+    directory: "frontend/docker"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+      - "ctwall"
+
+  # Docker images referenced in docker-compose
+  - package-ecosystem: "docker-compose"
+    directory: "/src/CTWall"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker-compose"
+      - "ctwall"
+
+  # Helm charts and chart dependencies
+  - package-ecosystem: "helm"
+    directory: "helm/ctwall"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "helm"
+      - "ctwall"
+
+  - package-ecosystem: "helm"
+    directory: "backend/helm/ctwall-backend"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "helm"
+      - "ctwall"
+
+  - package-ecosystem: "helm"
+    directory: "frontend/helm/ctwall-frontend"
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "22:05"
+      timezone: "Europe/Warsaw"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "helm"
+      - "ctwall"
