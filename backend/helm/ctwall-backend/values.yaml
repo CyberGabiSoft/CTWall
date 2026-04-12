@@ -239,7 +239,7 @@ configRaw: ""
 alertmanager:
   image:
     repository: prom/alertmanager
-    tag: 0.32.0
+    tag: v0.32.0
     pullPolicy: IfNotPresent
   initImage:
     repository: busybox
