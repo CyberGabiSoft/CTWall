@@ -132,9 +132,9 @@
 
 .detection-mode-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(170px, 220px) minmax(170px, 220px);
+  grid-template-columns: 1fr;
   gap: 12px;
-  align-items: center;
+  align-items: flex-start;
   padding: 10px 12px;
   border: 1px solid var(--ctw-border-subtle);
   border-radius: 10px;
@@ -152,28 +152,13 @@
 }
 
 .detection-mode-severity {
-  min-width: 170px;
+  min-width: 0;
+  width: min(260px, 100%);
 }
 
 .detection-mode-lookback {
-  min-width: 170px;
-}
-
-@media (max-width: 1240px) {
-  .detection-mode-row {
-    grid-template-columns: 1fr;
-    align-items: flex-start;
-  }
-
-  .detection-mode-severity {
-    min-width: 0;
-    width: min(260px, 100%);
-  }
-
-  .detection-mode-lookback {
-    min-width: 0;
-    width: min(260px, 100%);
-  }
+  min-width: 0;
+  width: min(260px, 100%);
 }
 
 .connector-meta {
