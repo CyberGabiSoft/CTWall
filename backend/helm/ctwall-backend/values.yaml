@@ -140,6 +140,11 @@ postgresql:
   podSecurityContext: {}
   securityContext: {}
 
+databaseWait:
+  enabled: true
+  timeoutSeconds: 600
+  pollIntervalSeconds: 2
+
 env:
   DB_URL: '{{ printf "postgres://%s:%s@%s:%v/%s?sslmode=disable" .Values.postgresql.auth.username (default "change-me-postgres" .Values.postgresql.auth.password) (include "ctwall-backend.postgresqlServiceName" .) .Values.postgresql.service.port .Values.postgresql.auth.database }}'
 

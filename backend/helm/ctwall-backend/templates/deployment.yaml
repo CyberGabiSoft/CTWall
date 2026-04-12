@@ -58,6 +58,68 @@ spec:
               readOnly: true
             - name: config-data
               mountPath: /config
+        {{- if .Values.databaseWait.enabled }}
+        - name: database-ready
+          image: "{{ .Values.alertmanager.initImage.repository }}:{{ .Values.alertmanager.initImage.tag }}"
+          imagePullPolicy: {{ .Values.alertmanager.initImage.pullPolicy }}
+          command:
+            - sh
+            - -ec
+            - |
+              db_url="${DB_URL:-}"
+              host=""
+              port=""
+
+              if [ -n "${db_url}" ]; then
+                authority="$(printf '%s' "${db_url}" | sed -E 's#^[a-zA-Z0-9+.-]+://##' | cut -d/ -f1)"
+                hostport="${authority##*@}"
+                host="${hostport%:*}"
+                port="${hostport##*:}"
+                if [ "${host}" = "${hostport}" ]; then
+                  host="${hostport}"
+                  port=""
+                fi
+              fi
+
+              if [ -z "${host}" ]; then
+                host="{{ include "ctwall-backend.postgresqlServiceName" . }}"
+              fi
+              if [ -z "${port}" ]; then
+                port="{{ .Values.postgresql.service.port }}"
+              fi
+
+              echo "waiting for postgres at ${host}:${port}"
+              deadline=$(( $(date +%s) + {{ .Values.databaseWait.timeoutSeconds }} ))
+              while ! nc -z -w 2 "${host}" "${port}" >/dev/null 2>&1; do
+                now=$(date +%s)
+                if [ "${now}" -ge "${deadline}" ]; then
+                  echo "timeout waiting for postgres at ${host}:${port}" >&2
+                  exit 1
+                fi
+                sleep {{ .Values.databaseWait.pollIntervalSeconds }}
+              done
+              echo "postgres is reachable"
+          {{- if or .Values.env .Values.extraEnv }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ tpl ($value | toString) $ | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- if or $runtimeSecretEnabled .Values.extraEnvFrom }}
+          envFrom:
+            {{- if $runtimeSecretEnabled }}
+            - secretRef:
+                name: {{ $runtimeSecretName }}
+            {{- end }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
         - name: runtime-initializer
           {{- with .Values.securityContext }}
           securityContext:

@@ -42,6 +42,12 @@ postgresql:
   persistence:
     enabled: false
 
+# Wait for PostgreSQL socket before running backend initializer.
+databaseWait:
+  enabled: true
+  timeoutSeconds: 600
+  pollIntervalSeconds: 2
+
 # Use chart-managed Secret for PostgreSQL password unless you provide existingSecret.
 secretEnv:
   create: true
