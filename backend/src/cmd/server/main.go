@@ -33,6 +33,7 @@ var exitFunc = os.Exit
 var shutdownServer = func(ctx context.Context, srv *http.Server) error {
 	return srv.Shutdown(ctx)
 }
+var notifySignals = signal.Notify
 
 var openDB = sql.Open
 var newPostgresStore = func(db *sql.DB, storagePath string) (store.Store, error) {
@@ -333,7 +334,8 @@ func run() error {
 
 	// Graceful shutdown
 	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+	notifySignals(shutdown, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(shutdown)
 
 	select {
 	case err := <-serverErrors:

@@ -35,7 +35,7 @@ func TestUpsertComponentAnalysisFinding_CreatesAlertForExistingMappingInActiveRe
 		t.Fatalf("store sbom: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb"
+	componentPURL := "pkg:pypi/tsplitlgtb@1.0.0"
 	revision, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
 		SbomSha256:   sbomSHA,
 		SbomProducer: "trivy",
@@ -167,7 +167,7 @@ func TestAddRevision_CreatesMalwareAlertFromExistingMappingsWithoutQueueRun(t *t
 		t.Fatalf("ensure test: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb"
+	componentPURL := "pkg:pypi/tsplitlgtb@1.0.0"
 	malwarePURL := componentPURL
 	resultID := uuid.New()
 
@@ -236,7 +236,7 @@ func TestAddRevision_CreatesMalwareAlertFromExistingMappingsWithoutQueueRun(t *t
 			ProjectID: product.ProjectID,
 			TestID:    &testItem.ID,
 			EntityRef: &componentPURL,
-			Details:   json.RawMessage(`{"malwarePurl":"pkg:pypi/tsplitlgtb","componentPurl":"pkg:pypi/tsplitlgtb","detectMode":"PURL_VERSION_SMART","matchType":"EXACT"}`),
+			Details:   json.RawMessage(`{"malwarePurl":"pkg:pypi/tsplitlgtb@1.0.0","componentPurl":"pkg:pypi/tsplitlgtb@1.0.0","detectMode":"PURL_VERSION_SMART","matchType":"EXACT"}`),
 		},
 	); err != nil {
 		t.Fatalf("insert manual open group: %v", err)
@@ -277,7 +277,7 @@ func TestUpsertComponentAnalysisFinding_DoesNotDuplicateWhenGroupAcknowledged(t 
 		t.Fatalf("store sbom: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb"
+	componentPURL := "pkg:pypi/tsplitlgtb@1.0.0"
 	if _, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
 		SbomSha256:   sbomSHA,
 		SbomProducer: "trivy",
@@ -374,7 +374,7 @@ func TestAddRevision_ReopensFixedTriageAndAlertForSameFinding(t *testing.T) {
 		t.Fatalf("ensure test: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb"
+	componentPURL := "pkg:pypi/tsplitlgtb@1.0.0"
 	malwarePURL := componentPURL
 	resultID := uuid.New()
 
@@ -562,7 +562,7 @@ func TestAddRevision_ReopensFalsePositiveTriageAndAlertForSameFinding(t *testing
 		t.Fatalf("ensure test: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb-fp"
+	componentPURL := "pkg:pypi/tsplitlgtb-fp@1.0.0"
 	malwarePURL := componentPURL
 	resultID := uuid.New()
 
@@ -712,7 +712,7 @@ func TestCreateMalwareDetectedAlertOccurrences_DoesNotAutoReopenFixed(t *testing
 		t.Fatalf("ensure test: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/tsplitlgtb-auto-reopen-summary"
+	componentPURL := "pkg:pypi/tsplitlgtb-auto-reopen-summary@1.0.0"
 	malwarePURL := componentPURL
 	resultID := uuid.New()
 

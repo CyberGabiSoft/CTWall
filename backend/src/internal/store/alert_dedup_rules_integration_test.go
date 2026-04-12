@@ -114,7 +114,7 @@ func TestCreateMalwareDetectedAlertOccurrences_UsesTestDedupRule(t *testing.T) {
 		t.Fatalf("ensure test B: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/dedup-malware"
+	componentPURL := "pkg:pypi/dedup-malware@1.0.0"
 	sbomA := strings.Repeat("d", 64)
 	sbomB := strings.Repeat("e", 64)
 	if _, err := storeInstance.StoreSbom(sbomA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
@@ -241,7 +241,7 @@ func TestCreateMalwareDetectedAlertOccurrences_DoesNotReopenFixedInOtherTests(t 
 		t.Fatalf("ensure test B: %v", err)
 	}
 
-	componentPURL := "pkg:pypi/dedup-fixed-other-test-malware"
+	componentPURL := "pkg:pypi/dedup-fixed-other-test-malware@1.0.0"
 	sbomA := strings.Repeat("f", 64)
 	sbomB := strings.Repeat("g", 64)
 	if _, err := storeInstance.StoreSbom(sbomA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {

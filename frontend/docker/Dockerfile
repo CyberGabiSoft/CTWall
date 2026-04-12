@@ -9,7 +9,7 @@ RUN npm ci
 COPY src/ ./
 RUN npm run build
 
-FROM nginx:1.28-alpine
+FROM nginx:1.29.8-alpine
 
 RUN apk add --no-cache openssl && \
     rm -f /etc/nginx/conf.d/default.conf && \
