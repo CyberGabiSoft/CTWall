@@ -109,13 +109,14 @@ env:
   FRONTEND_CLIENT_MAX_BODY_SIZE: "50m"
   FRONTEND_SSL_CERT_PATH: "/etc/nginx/certs/tls.crt"
   FRONTEND_SSL_KEY_PATH: "/etc/nginx/certs/tls.key"
-  # For Kubernetes/Helm keep TLS material in Secret and do not generate runtime certs in pod.
-  FRONTEND_SSL_AUTO_GENERATE: "false"
+  # Default for local/dev clusters: generate in-pod self-signed cert when no TLS Secret is mounted.
+  FRONTEND_SSL_AUTO_GENERATE: "true"
   FRONTEND_SSL_SELF_SIGNED_CN: "localhost"
   FRONTEND_SSL_SELF_SIGNED_DAYS: "365"
 
 tls:
-  existingSecret: "ctwall-frontend-tls"
+  # Optional pre-created TLS Secret; when empty, cert/key are generated in pod startup.
+  existingSecret: ""
   mountPath: "/etc/nginx/certs"
 
 extraEnv: []

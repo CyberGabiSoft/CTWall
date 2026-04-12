@@ -51,4 +51,4 @@ secretEnv:
 alertmanager:
   image:
     repository: prom/alertmanager
-    tag: v0.28.1
+    tag: v0.32.0
