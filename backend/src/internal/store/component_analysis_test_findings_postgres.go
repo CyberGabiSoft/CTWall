@@ -34,7 +34,9 @@ func (s *PostgresStore) ListActiveTestComponentAnalysisMalwareFindings(
 			 JOIN test_revisions tr ON tr.id = c.revision_id
 			 WHERE tr.test_id = $1 AND tr.is_active = TRUE
 		 )
-		 SELECT f.id, f.component_purl, f.malware_purl, f.source_malware_input_result_id, f.match_type, f.created_at, f.updated_at,
+		 SELECT f.id, f.component_purl, f.malware_purl,
+		        COALESCE(mid.malware_id, ''::text) AS malware_id,
+		        f.source_malware_input_result_id, f.match_type, f.created_at, f.updated_at,
 		        COALESCE(tg.status, 'OPEN') AS triage_status,
 		        tg.priority AS triage_priority,
 		        COALESCE(
@@ -54,6 +56,21 @@ func (s *PostgresStore) ListActiveTestComponentAnalysisMalwareFindings(
 		   ON tg.test_id = t.id
 		  AND tg.component_purl = f.component_purl
 		  AND tg.malware_purl = f.malware_purl
+		 LEFT JOIN LATERAL (
+		   SELECT COALESCE(
+		            NULLIF(TRIM(scr.details_json->>'id'), ''),
+		            CASE
+		              WHEN scr.result_filename ~* '^MAL-.*\\.json$'
+		                THEN NULLIF(TRIM(REGEXP_REPLACE(scr.result_filename, '\\.json$', '', 'i')), '')
+		              ELSE NULL
+		            END
+		          ) AS malware_id
+		   FROM source_malware_input_component_results scr
+		   WHERE scr.analysis_result_id = f.source_malware_input_result_id
+		     AND scr.is_malware = TRUE
+		   ORDER BY COALESCE(scr.modified_at, scr.published_at, scr.created_at) DESC, scr.id DESC
+		   LIMIT 1
+		 ) mid ON TRUE
 		 WHERE r.verdict = 'MALWARE'
 		 ORDER BY f.updated_at DESC, f.id ASC
 		 LIMIT $2 OFFSET $3`,

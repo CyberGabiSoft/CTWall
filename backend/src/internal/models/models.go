@@ -233,6 +233,7 @@ type ComponentAnalysisFinding struct {
 	ID                         uuid.UUID `json:"id" db:"id"`
 	ComponentPURL              string    `json:"componentPurl" db:"component_purl"`
 	MalwarePURL                string    `json:"malwarePurl" db:"malware_purl"`
+	MalwareID                  string    `json:"malwareId,omitempty" db:"malware_id"`
 	SourceMalwareInputResultID uuid.UUID `json:"sourceMalwareInputResultId" db:"source_malware_input_result_id"`
 	MatchType                  string    `json:"matchType" db:"match_type"`
 	CreatedAt                  time.Time `json:"createdAt" db:"created_at"`
@@ -400,8 +401,11 @@ type AlertDetectionMode struct {
 	Mode      string    `json:"mode" db:"mode"`         // PURL_VERSION_SMART|PURL_CONTAINS_PREFIX
 	Enabled   bool      `json:"enabled" db:"enabled"`   // whether mode contributes alerts
 	Severity  string    `json:"severity" db:"severity"` // INFO|WARN|ERROR
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt time.Time `json:"updatedAt" db:"updated_at"`
+	// LookbackDays is used only for PURL_CONTAINS_PREFIX:
+	// nil => all history; >0 => last N days.
+	LookbackDays *int      `json:"lookbackDays" db:"lookback_days"`
+	CreatedAt    time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt    time.Time `json:"updatedAt" db:"updated_at"`
 }
 
 // AlertOccurrence represents a single occurrence (append-only) associated with an AlertGroup.

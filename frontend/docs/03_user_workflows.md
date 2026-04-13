@@ -144,6 +144,10 @@ Scope:
 3. `Detection modes`
 - `purl_version_smart` and `purl_contains_prefix` can be enabled independently,
 - each mode has its own alert severity (`ERROR` / `WARNING` / `INFO`).
+- `purl_contains_prefix` supports optional `lookback days`:
+  - empty value means `all`,
+  - positive integer means `last N days` based on OSV `modified_at` (fallback `published_at`),
+  - if OSV item has no date fields, date filter is skipped for that item.
 - alerts table default fetch is not limited to `ERROR` anymore (WARN/INFO are visible by default).
 
 4. `Dedup rules`

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CTWall Backend API
-  version: 1.2.0
+  version: 1.2.1
   description: |
     API for ChainThreatWall (CTWall) - SBOM Management and Security Analysis System.
     Adheres to OWASP ASVS Level 2 Security Requirements.
@@ -547,6 +547,9 @@ components:
         malwarePurl:
           type: string
           maxLength: 2048
+        malwareId:
+          type: string
+          maxLength: 120
         sourceMalwareInputResultId:
           type: string
           maxLength: 120
@@ -1751,6 +1754,14 @@ components:
         enabled: { type: boolean }
         severity:
           $ref: "#/components/schemas/AlertDetectionModeSeverity"
+        lookbackDays:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 1
+          description: |
+            Used only for PURL_CONTAINS_PREFIX.
+            null means all history, positive value means last N days.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 
@@ -1773,6 +1784,14 @@ components:
         severity:
           type: string
           enum: [INFO, WARNING, ERROR]
+        lookbackDays:
+          type: integer
+          format: int32
+          nullable: true
+          minimum: 1
+          description: |
+            Used only for PURL_CONTAINS_PREFIX.
+            null means all history, positive value means last N days.
 
     PutAlertDetectionModesRequest:
       type: object

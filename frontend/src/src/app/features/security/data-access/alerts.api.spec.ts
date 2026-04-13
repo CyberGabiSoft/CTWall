@@ -83,14 +83,14 @@ describe('AlertsApi (TestBed)', () => {
     expect(req.request.method).toBe('GET');
     req.flush({
       items: [
-        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
-        { mode: 'PURL_CONTAINS_PREFIX', enabled: false, severity: 'WARN' }
+        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR', lookbackDays: null },
+        { mode: 'PURL_CONTAINS_PREFIX', enabled: false, severity: 'WARN', lookbackDays: 30 }
       ]
     });
 
     await expect(promise).resolves.toEqual([
-      { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
-      { mode: 'PURL_CONTAINS_PREFIX', enabled: false, severity: 'WARN' }
+      { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR', lookbackDays: null },
+      { mode: 'PURL_CONTAINS_PREFIX', enabled: false, severity: 'WARN', lookbackDays: 30 }
     ]);
     http.verify();
   });
@@ -105,8 +105,8 @@ describe('AlertsApi (TestBed)', () => {
 
     const payload: PutAlertDetectionModesRequest = {
       modes: [
-        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
-        { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARNING' }
+        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR', lookbackDays: null },
+        { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARNING', lookbackDays: 7 }
       ]
     };
 
@@ -116,14 +116,14 @@ describe('AlertsApi (TestBed)', () => {
     expect(req.request.body).toEqual(payload);
     req.flush({
       items: [
-        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
-        { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARN' }
+        { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR', lookbackDays: null },
+        { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARN', lookbackDays: 7 }
       ]
     });
 
     await expect(promise).resolves.toEqual([
-      { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR' },
-      { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARN' }
+      { mode: 'PURL_VERSION_SMART', enabled: true, severity: 'ERROR', lookbackDays: null },
+      { mode: 'PURL_CONTAINS_PREFIX', enabled: true, severity: 'WARN', lookbackDays: 7 }
     ]);
     http.verify();
   });

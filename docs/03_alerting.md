@@ -10,6 +10,10 @@ CTWall alerting is built around an Alertmanager-centric runtime:
      - `EXACT` findings map to `purl_version_smart`,
      - `CONTAINS_PREFIX` findings map to `purl_contains_prefix`.
    - Each mode has independent per-project alert severity (`ERROR/WARNING/INFO`).
+   - `purl_contains_prefix` supports optional per-project lookback window:
+     - `lookbackDays = NULL` -> all history,
+     - `lookbackDays > 0` -> only OSV entries from last `N` days by `modified_at` (fallback `published_at`).
+     - If an OSV entry has no `modified_at` and no `published_at`, date filtering is not enforced for that entry.
    - Mode is encoded into malware group key (`detect_mode:...`) so both modes can emit separate alerts for the same malware PURL.
    - Group severity is synchronized with active mode severity on both reconcile and occurrence upsert paths.
 2. Backend emits FIRING/RESOLVED lifecycle signals with dedup context.

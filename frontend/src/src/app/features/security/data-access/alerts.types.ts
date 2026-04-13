@@ -151,6 +151,7 @@ export interface AlertDetectionModeState {
   mode: AlertDetectionMode;
   enabled: boolean;
   severity: AlertDetectionModeSeverity;
+  lookbackDays?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -164,5 +165,6 @@ export interface PutAlertDetectionModesRequest {
     mode: AlertDetectionMode;
     enabled: boolean;
     severity: AlertMinSeverity;
+    lookbackDays?: number | null;
   }>;
 }

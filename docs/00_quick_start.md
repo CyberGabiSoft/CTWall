@@ -28,8 +28,8 @@ Run from `src/ctwall`:
 
 #### Pull published images (default in deploy/docker/.env)
 ```bash
-docker pull cybergabisoft/ctwall-backend:1.2.0
-docker pull cybergabisoft/ctwall-frontend:1.2.0
+docker pull cybergabisoft/ctwall-backend:1.2.1
+docker pull cybergabisoft/ctwall-frontend:1.2.1
 ```
 
 OR
@@ -128,7 +128,7 @@ helm package ./helm/ctwall --destination ./helm/dist
 ```
 Result file (for current chart version):
 ```text
-./helm/dist/ctwall-1.2.0.tgz
+./helm/dist/ctwall-1.2.1.tgz
 ```
 
 For local/testing only: if you do not have `./tls/tls.crt` and `./tls/tls.key` yet, generate self-signed certs:
@@ -159,9 +159,9 @@ See `Ingress (optional)` below to enable it.
 ```bash
 helm upgrade --install ctwall ./helm/ctwall -n "$NS" \
   --set backend.image.repository=docker.io/cybergabisoft/ctwall-backend \
-  --set backend.image.tag=1.2.0 \
+  --set backend.image.tag=1.2.1 \
   --set frontend.image.repository=docker.io/cybergabisoft/ctwall-frontend \
-  --set frontend.image.tag=1.2.0
+  --set frontend.image.tag=1.2.1
 ```
 
 #### Option C) Install full stack with explicit manually built images (for example after local `docker build`):

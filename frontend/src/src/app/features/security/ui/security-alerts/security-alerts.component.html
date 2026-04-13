@@ -365,6 +365,22 @@
                     }
                   </mat-select>
                 </mat-form-field>
+                @if (item.mode === 'PURL_CONTAINS_PREFIX') {
+                  <mat-form-field appearance="outline" subscriptSizing="dynamic" class="ctw-form-field--compact detection-mode-lookback">
+                    <mat-label>Lookback days</mat-label>
+                    <input
+                      matInput
+                      type="number"
+                      min="1"
+                      step="1"
+                      [value]="item.lookbackDays ?? ''"
+                      (input)="setDetectionModeLookbackDays(item.mode, $any($event.target).value)"
+                      [disabled]="!canManageDetectionModes()"
+                      placeholder="All"
+                    />
+                    <mat-hint>Empty means all history.</mat-hint>
+                  </mat-form-field>
+                }
               </div>
             }
           </div>

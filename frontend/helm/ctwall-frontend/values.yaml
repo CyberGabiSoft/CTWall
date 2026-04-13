@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: docker.io/cybergabisoft/ctwall-frontend
   pullPolicy: IfNotPresent
-  tag: "1.2.0"
+  tag: "1.2.1"
 
 imagePullSecrets: []
 nameOverride: ""

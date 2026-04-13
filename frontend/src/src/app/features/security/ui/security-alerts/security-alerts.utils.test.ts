@@ -63,11 +63,24 @@ describe('security-alerts.utils', () => {
           componentPurl: 'pkg:npm/component@1.0.0',
           malwarePurl: 'pkg:npm/mal@1.0.0',
           matchType: 'CONTAINS_PREFIX',
-          detectMode: 'PURL_CONTAINS_PREFIX'
+          detectMode: 'PURL_CONTAINS_PREFIX',
+          malwareId: 'MAL-2026-1000'
         },
         ''
       )
     ).toContain('base: pkg:npm/component == pkg:npm/mal');
+    expect(
+      occurrenceDetectionData(
+        {
+          componentPurl: 'pkg:npm/component@1.0.0',
+          malwarePurl: 'pkg:npm/mal@1.0.0',
+          matchType: 'CONTAINS_PREFIX',
+          detectMode: 'PURL_CONTAINS_PREFIX',
+          malwareId: 'MAL-2026-1000'
+        },
+        ''
+      )
+    ).toContain('package: MAL-2026-1000');
   });
 
   it('normalizes severity and dedup rules serialization', () => {

@@ -1121,6 +1121,210 @@ func TestCreateMalwareDetectedAlertOccurrences_ReopenUsesUpdatedModeSeverity(t *
 	}
 }
 
+func TestCreateMalwareDetectedAlertOccurrences_ContainsPrefixLookbackSkipsOldSignals(t *testing.T) {
+	storeInstance, db := tests.NewPostgresTestStore(t)
+
+	product, err := storeInstance.CreateProduct("alerts-prefix-lookback-old-product", "")
+	if err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	scope, err := storeInstance.CreateScope(product.ID, "alerts-prefix-lookback-old-scope", "")
+	if err != nil {
+		t.Fatalf("create scope: %v", err)
+	}
+	testItem, _, err := storeInstance.EnsureTest(scope.ID, "alerts-prefix-lookback-old-test", "cyclonedx", "1.6")
+	if err != nil {
+		t.Fatalf("ensure test: %v", err)
+	}
+
+	source, err := storeInstance.CreateScanMalwareSource("prefix-lookback-old-source", "OSV_API", "https://osv.example.local", nil, true)
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+	scanner, err := storeInstance.CreateScanner(source.ID, "prefix-lookback-old-scanner", "osv", "1.0.0", "", nil)
+	if err != nil {
+		t.Fatalf("create scanner: %v", err)
+	}
+
+	componentPURL := "pkg:pypi/lookback-old-package"
+	malwarePURL := componentPURL
+	resultID := uuid.New()
+	queue, err := storeInstance.UpsertAnalysisQueue(malwarePURL, scanner.ID, store.AnalysisStatusCompleted)
+	if err != nil {
+		t.Fatalf("upsert analysis queue: %v", err)
+	}
+
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
+		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
+		resultID, malwarePURL,
+	); err != nil {
+		t.Fatalf("insert analysis result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_component_results (
+		     component_purl, analysis_result_id, scan_id, source_id, details_json, published_at, modified_at, is_malware
+		 )
+		 VALUES ($1, $2, $3, $4, '{}'::jsonb, NULL, $5, TRUE)`,
+		malwarePURL, resultID, queue.ID, source.ID, time.Now().UTC().AddDate(0, 0, -30),
+	); err != nil {
+		t.Fatalf("insert source malware component result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'CONTAINS_PREFIX', NOW(), NOW())`,
+		componentPURL, malwarePURL, resultID,
+	); err != nil {
+		t.Fatalf("insert mapping: %v", err)
+	}
+
+	sbomSHA := strings.Repeat("m", 64)
+	if _, err := storeInstance.StoreSbom(sbomSHA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
+		t.Fatalf("store sbom: %v", err)
+	}
+	if _, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
+		SbomSha256:   sbomSHA,
+		SbomProducer: "trivy",
+		Components: []store.ComponentInput{
+			{
+				PURL:     componentPURL,
+				PkgName:  "lookback-old-package",
+				PkgType:  "pypi",
+				SbomType: "library",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("add revision: %v", err)
+	}
+
+	lookbackDays := 7
+	if _, err := storeInstance.ReplaceAlertDetectionModes(product.ProjectID, []store.AlertDetectionModeInput{
+		{
+			Mode:         store.AlertDetectionModePURLContainsPrefix,
+			Enabled:      true,
+			Severity:     eventmeta.SeverityWarn,
+			LookbackDays: &lookbackDays,
+		},
+	}); err != nil {
+		t.Fatalf("set detection modes: %v", err)
+	}
+
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLContainsPrefix,
+		store.ComponentAnalysisMatchContainsPrefix,
+	)
+	if err != nil {
+		t.Fatalf("create prefix alert occurrence: %v", err)
+	}
+	if created != 0 {
+		t.Fatalf("expected no created occurrences for old prefix signal, got %d", created)
+	}
+}
+
+func TestCreateMalwareDetectedAlertOccurrences_ContainsPrefixLookbackAllowsWhenDatesMissing(t *testing.T) {
+	storeInstance, db := tests.NewPostgresTestStore(t)
+
+	product, err := storeInstance.CreateProduct("alerts-prefix-lookback-missing-date-product", "")
+	if err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	scope, err := storeInstance.CreateScope(product.ID, "alerts-prefix-lookback-missing-date-scope", "")
+	if err != nil {
+		t.Fatalf("create scope: %v", err)
+	}
+	testItem, _, err := storeInstance.EnsureTest(scope.ID, "alerts-prefix-lookback-missing-date-test", "cyclonedx", "1.6")
+	if err != nil {
+		t.Fatalf("ensure test: %v", err)
+	}
+
+	source, err := storeInstance.CreateScanMalwareSource("prefix-lookback-missing-date-source", "OSV_API", "https://osv.example.local", nil, true)
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+	scanner, err := storeInstance.CreateScanner(source.ID, "prefix-lookback-missing-date-scanner", "osv", "1.0.0", "", nil)
+	if err != nil {
+		t.Fatalf("create scanner: %v", err)
+	}
+
+	componentPURL := "pkg:pypi/lookback-missing-date-package"
+	malwarePURL := componentPURL
+	resultID := uuid.New()
+	queue, err := storeInstance.UpsertAnalysisQueue(malwarePURL, scanner.ID, store.AnalysisStatusCompleted)
+	if err != nil {
+		t.Fatalf("upsert analysis queue: %v", err)
+	}
+
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_results (id, component_purl, verdict, findings_count, summary, scanned_at)
+		 VALUES ($1, $2, 'MALWARE', 1, 'malware', NOW())`,
+		resultID, malwarePURL,
+	); err != nil {
+		t.Fatalf("insert analysis result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO source_malware_input_component_results (
+		     component_purl, analysis_result_id, scan_id, source_id, details_json, published_at, modified_at, is_malware
+		 )
+		 VALUES ($1, $2, $3, $4, '{}'::jsonb, NULL, NULL, TRUE)`,
+		malwarePURL, resultID, queue.ID, source.ID,
+	); err != nil {
+		t.Fatalf("insert source malware component result: %v", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO component_analysis_malware_findings (component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'CONTAINS_PREFIX', NOW(), NOW())`,
+		componentPURL, malwarePURL, resultID,
+	); err != nil {
+		t.Fatalf("insert mapping: %v", err)
+	}
+
+	sbomSHA := strings.Repeat("n", 64)
+	if _, err := storeInstance.StoreSbom(sbomSHA, []byte(`{"bomFormat":"CycloneDX"}`), "cyclonedx", "application/json", false); err != nil {
+		t.Fatalf("store sbom: %v", err)
+	}
+	if _, err := storeInstance.AddRevision(testItem.ID, store.RevisionInput{
+		SbomSha256:   sbomSHA,
+		SbomProducer: "trivy",
+		Components: []store.ComponentInput{
+			{
+				PURL:     componentPURL,
+				PkgName:  "lookback-missing-date-package",
+				PkgType:  "pypi",
+				SbomType: "library",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("add revision: %v", err)
+	}
+
+	lookbackDays := 7
+	if _, err := storeInstance.ReplaceAlertDetectionModes(product.ProjectID, []store.AlertDetectionModeInput{
+		{
+			Mode:         store.AlertDetectionModePURLContainsPrefix,
+			Enabled:      true,
+			Severity:     eventmeta.SeverityWarn,
+			LookbackDays: &lookbackDays,
+		},
+	}); err != nil {
+		t.Fatalf("set detection modes: %v", err)
+	}
+
+	created, err := storeInstance.CreateMalwareDetectedAlertOccurrences(
+		componentPURL,
+		malwarePURL,
+		store.AlertDetectionModePURLContainsPrefix,
+		store.ComponentAnalysisMatchContainsPrefix,
+	)
+	if err != nil {
+		t.Fatalf("create prefix alert occurrence: %v", err)
+	}
+	if created != 1 {
+		t.Fatalf("expected one created occurrence when source dates are missing, got %d", created)
+	}
+}
+
 func TestListAlertGroups_AutoClosesOpenMalwareGroupWithZeroActiveOccurrences(t *testing.T) {
 	storeInstance, db := tests.NewPostgresTestStore(t)
 

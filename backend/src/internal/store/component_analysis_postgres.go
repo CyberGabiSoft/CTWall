@@ -681,13 +681,30 @@ func (s *PostgresStore) ListComponentAnalysisFindings(componentPURL string) ([]m
 	defer cancel()
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT f.id, f.component_purl, f.malware_purl, f.source_malware_input_result_id, f.match_type, f.created_at, f.updated_at,
+		`SELECT f.id, f.component_purl, f.malware_purl,
+		        COALESCE(mid.malware_id, ''::text) AS malware_id,
+		        f.source_malware_input_result_id, f.match_type, f.created_at, f.updated_at,
 		        'OPEN'::text AS triage_status,
 		        NULL::text AS triage_priority,
 		        'P2'::text AS effective_priority
 		 FROM component_analysis_malware_findings f
 		 JOIN source_malware_input_results r
 		   ON r.id = f.source_malware_input_result_id
+		 LEFT JOIN LATERAL (
+		   SELECT COALESCE(
+		            NULLIF(TRIM(scr.details_json->>'id'), ''),
+		            CASE
+		              WHEN scr.result_filename ~* '^MAL-.*\\.json$'
+		                THEN NULLIF(TRIM(REGEXP_REPLACE(scr.result_filename, '\\.json$', '', 'i')), '')
+		              ELSE NULL
+		            END
+		          ) AS malware_id
+		   FROM source_malware_input_component_results scr
+		   WHERE scr.analysis_result_id = f.source_malware_input_result_id
+		     AND scr.is_malware = TRUE
+		   ORDER BY COALESCE(scr.modified_at, scr.published_at, scr.created_at) DESC, scr.id DESC
+		   LIMIT 1
+		 ) mid ON TRUE
 		 WHERE f.component_purl = $1
 		   AND r.verdict = 'MALWARE'
 		 ORDER BY f.updated_at DESC`,
@@ -718,12 +735,29 @@ func (s *PostgresStore) GetComponentAnalysisFinding(id uuid.UUID) (*models.Compo
 	defer cancel()
 
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, component_purl, malware_purl, source_malware_input_result_id, match_type, created_at, updated_at,
+		`SELECT f.id, f.component_purl, f.malware_purl,
+		        COALESCE(mid.malware_id, ''::text) AS malware_id,
+		        f.source_malware_input_result_id, f.match_type, f.created_at, f.updated_at,
 		        'OPEN'::text AS triage_status,
 		        NULL::text AS triage_priority,
 		        'P2'::text AS effective_priority
-		 FROM component_analysis_malware_findings
-		 WHERE id = $1`, id)
+		 FROM component_analysis_malware_findings f
+		 LEFT JOIN LATERAL (
+		   SELECT COALESCE(
+		            NULLIF(TRIM(scr.details_json->>'id'), ''),
+		            CASE
+		              WHEN scr.result_filename ~* '^MAL-.*\\.json$'
+		                THEN NULLIF(TRIM(REGEXP_REPLACE(scr.result_filename, '\\.json$', '', 'i')), '')
+		              ELSE NULL
+		            END
+		          ) AS malware_id
+		   FROM source_malware_input_component_results scr
+		   WHERE scr.analysis_result_id = f.source_malware_input_result_id
+		     AND scr.is_malware = TRUE
+		   ORDER BY COALESCE(scr.modified_at, scr.published_at, scr.created_at) DESC, scr.id DESC
+		   LIMIT 1
+		 ) mid ON TRUE
+		 WHERE f.id = $1`, id)
 	finding, err := scanComponentAnalysisFinding(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -965,11 +999,13 @@ func applyComponentAnalysisQueueNulls(
 
 func scanComponentAnalysisFinding(row *sql.Row) (*models.ComponentAnalysisFinding, error) {
 	var finding models.ComponentAnalysisFinding
+	var malwareID sql.NullString
 	var triagePriority sql.NullString
 	if err := row.Scan(
 		&finding.ID,
 		&finding.ComponentPURL,
 		&finding.MalwarePURL,
+		&malwareID,
 		&finding.SourceMalwareInputResultID,
 		&finding.MatchType,
 		&finding.CreatedAt,
@@ -982,17 +1018,22 @@ func scanComponentAnalysisFinding(row *sql.Row) (*models.ComponentAnalysisFindin
 	}
 	if triagePriority.Valid {
 		finding.TriagePriority = &triagePriority.String
+	}
+	if malwareID.Valid {
+		finding.MalwareID = malwareID.String
 	}
 	return &finding, nil
 }
 
 func scanComponentAnalysisFindingRow(rows *sql.Rows) (*models.ComponentAnalysisFinding, error) {
 	var finding models.ComponentAnalysisFinding
+	var malwareID sql.NullString
 	var triagePriority sql.NullString
 	if err := rows.Scan(
 		&finding.ID,
 		&finding.ComponentPURL,
 		&finding.MalwarePURL,
+		&malwareID,
 		&finding.SourceMalwareInputResultID,
 		&finding.MatchType,
 		&finding.CreatedAt,
@@ -1005,6 +1046,9 @@ func scanComponentAnalysisFindingRow(rows *sql.Rows) (*models.ComponentAnalysisF
 	}
 	if triagePriority.Valid {
 		finding.TriagePriority = &triagePriority.String
+	}
+	if malwareID.Valid {
+		finding.MalwareID = malwareID.String
 	}
 	return &finding, nil
 }
