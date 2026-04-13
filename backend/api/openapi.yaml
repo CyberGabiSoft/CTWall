@@ -547,6 +547,9 @@ components:
         malwarePurl:
           type: string
           maxLength: 2048
+        malwareId:
+          type: string
+          maxLength: 120
         sourceMalwareInputResultId:
           type: string
           maxLength: 120

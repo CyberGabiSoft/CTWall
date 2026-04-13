@@ -24,6 +24,7 @@ export interface ComponentAnalysisFinding {
   id: string;
   componentPurl: string;
   malwarePurl: string;
+  malwareId?: string | null;
   sourceMalwareInputResultId?: string | null;
   matchType: ComponentAnalysisMatchType;
   createdAt?: string | null;

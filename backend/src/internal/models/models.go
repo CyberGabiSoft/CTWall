@@ -233,6 +233,7 @@ type ComponentAnalysisFinding struct {
 	ID                         uuid.UUID `json:"id" db:"id"`
 	ComponentPURL              string    `json:"componentPurl" db:"component_purl"`
 	MalwarePURL                string    `json:"malwarePurl" db:"malware_purl"`
+	MalwareID                  string    `json:"malwareId,omitempty" db:"malware_id"`
 	SourceMalwareInputResultID uuid.UUID `json:"sourceMalwareInputResultId" db:"source_malware_input_result_id"`
 	MatchType                  string    `json:"matchType" db:"match_type"`
 	CreatedAt                  time.Time `json:"createdAt" db:"created_at"`

@@ -112,7 +112,8 @@ export function formatDetectionData(
   componentPurl: string | null | undefined,
   malwarePurl: string | null | undefined,
   matchType: string | null | undefined,
-  detectionMode: string | null | undefined
+  detectionMode: string | null | undefined,
+  malwareId?: string | null | undefined
 ): string {
   const component = (componentPurl ?? '').trim();
   const malware = (malwarePurl ?? '').trim();
@@ -132,11 +133,16 @@ export function formatDetectionData(
   const malwareVersion = malwareParts.version || '?';
 
   const base = `${component || '*'} -> ${malware || '-'}`;
+  const malwarePackage = (malwareId ?? '').trim();
+  const malwarePackageSuffix = malwarePackage ? `, package: ${malwarePackage}` : '';
   if (effectiveMode === 'purl_version_smart') {
-    return `${base} (base+version: ${componentBase}@${componentVersion} == ${malwareBase}@${malwareVersion})`;
+    return `${base} (base+version: ${componentBase}@${componentVersion} == ${malwareBase}@${malwareVersion}${malwarePackageSuffix})`;
   }
   if (effectiveMode === 'purl_contains_prefix') {
-    return `${base} (base: ${componentBase} == ${malwareBase})`;
+    return `${base} (base: ${componentBase} == ${malwareBase}${malwarePackageSuffix})`;
+  }
+  if (malwarePackage) {
+    return `${base} (package: ${malwarePackage})`;
   }
   return base;
 }
@@ -197,7 +203,8 @@ export function occurrenceDetectionData(
   const malwarePurl = detailsStringValue(details, 'malwarePurl');
   const matchType = detailsStringValue(details, 'matchType');
   const detectMode = detailsStringValue(details, 'detectMode');
-  return formatDetectionData(componentPurl, malwarePurl, matchType, detectMode);
+  const malwareId = detailsStringValue(details, 'malwareId');
+  return formatDetectionData(componentPurl, malwarePurl, matchType, detectMode, malwareId);
 }
 
 export function isKnownKey<T extends string>(value: string, keys: readonly T[]): value is T {
