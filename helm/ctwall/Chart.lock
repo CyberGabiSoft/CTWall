@@ -1,12 +1,12 @@
 dependencies:
 - name: postgresql
   repository: https://charts.bitnami.com/bitnami
-  version: 18.5.16
+  version: 18.6.2
 - name: ctwall-backend
   repository: file://../../backend/helm/ctwall-backend
   version: 1.2.1
 - name: ctwall-frontend
   repository: file://../../frontend/helm/ctwall-frontend
   version: 1.2.1
-digest: sha256:c199cbdfc6835765024dc625941e4f6775e97afdfdf4585feb4739d3646c47a6
-generated: "2026-04-12T21:08:59.359172686+02:00"
+digest: sha256:3ad5b7f68460621463874034a8b422803cb11aae64e3f602837bb89e44a7cffb
+generated: "2026-05-01T23:41:00.695068254Z"
