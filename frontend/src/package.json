@@ -47,7 +47,7 @@
     "@angular-eslint/template-parser": "^21.2.0",
     "@angular/build": "21.2.7",
     "@angular/cli": "21.2.7",
-    "@angular/compiler-cli": "21.2.8",
+    "@angular/compiler-cli": "21.2.11",
     "@emnapi/core": "^1.9.2",
     "@emnapi/runtime": "^1.9.2",
     "@eslint/js": "^10.0.1",
